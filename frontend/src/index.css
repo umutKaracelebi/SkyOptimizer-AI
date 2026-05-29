@@ -1,0 +1,297 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Dark mode select dropdown */
+select option {
+  background-color: #0a0e27;
+  color: #22d3ee;
+  padding: 8px;
+}
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 3.9%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 217 33% 17%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 217 33% 17%;
+    --input: 217 33% 17%;
+    --ring: 217 91% 60%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 224 71% 4%;
+    --foreground: 213 31% 91%;
+    --card: 224 71% 6%;
+    --card-foreground: 213 31% 91%;
+    --popover: 224 71% 4%;
+    --popover-foreground: 213 31% 91%;
+    --primary: 199 89% 48%;
+    --primary-foreground: 224 71% 4%;
+    --secondary: 215 28% 17%;
+    --secondary-foreground: 213 31% 91%;
+    --muted: 215 28% 17%;
+    --muted-foreground: 215 20% 55%;
+    --accent: 215 28% 17%;
+    --accent-foreground: 213 31% 91%;
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 0 85% 64%;
+    --border: 215 28% 17%;
+    --input: 215 28% 17%;
+    --ring: 199 89% 48%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-sans;
+  }
+}
+
+/* ─── Havacılık Temalı Özel Stiller ──────────────────────────── */
+
+/* Neon glow efekti */
+.glow-primary {
+  box-shadow: 0 0 15px hsl(var(--primary) / 0.3),
+              0 0 45px hsl(var(--primary) / 0.1);
+}
+
+.glow-text {
+  text-shadow: 0 0 10px hsl(var(--primary) / 0.5),
+               0 0 30px hsl(var(--primary) / 0.2);
+}
+
+/* Havacılık radar tarama efekti */
+@keyframes radar-sweep {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.radar-sweep {
+  animation: radar-sweep 4s linear infinite;
+}
+
+/* Pulse animasyonu */
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Sayaç animasyonu */
+@keyframes count-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.count-up {
+  animation: count-up 0.6s ease-out forwards;
+}
+
+/* Glassmorphism kart — tanım Sprint 4/5 bölümünde */
+
+
+/* Dither pattern */
+.dither-pattern {
+  background-image: 
+    repeating-linear-gradient(0deg, transparent 0px, transparent 1px, white 1px, white 2px),
+    repeating-linear-gradient(90deg, transparent 0px, transparent 1px, white 1px, white 2px);
+  background-size: 3px 3px;
+}
+
+/* Yıldız arkaplanı (mobil) */
+.stars-bg {
+  background-image: 
+    radial-gradient(1px 1px at 20% 30%, white, transparent),
+    radial-gradient(1px 1px at 60% 70%, white, transparent),
+    radial-gradient(1px 1px at 50% 50%, white, transparent),
+    radial-gradient(1px 1px at 80% 10%, white, transparent),
+    radial-gradient(1px 1px at 90% 60%, white, transparent),
+    radial-gradient(1px 1px at 33% 80%, white, transparent),
+    radial-gradient(1px 1px at 15% 60%, white, transparent),
+    radial-gradient(1px 1px at 70% 40%, white, transparent);
+  background-size: 200% 200%, 180% 180%, 250% 250%, 220% 220%, 190% 190%, 240% 240%, 210% 210%, 230% 230%;
+  opacity: 0.3;
+}
+
+/* Scrollbar özelleştirme */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: hsl(var(--background));
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted));
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground));
+}
+
+/* Leaflet harita dark theme override */
+.leaflet-container {
+  background: hsl(var(--background)) !important;
+}
+
+/* ─── Sprint 4/5: Micro-animasyonlar ─────────────────────────── */
+
+/* Fade in + slide up */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in-up {
+  animation: fade-in-up 0.5s ease-out both;
+}
+
+/* Slide in from left (panel) */
+@keyframes slide-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.slide-in-left {
+  animation: slide-in-left 0.4s ease-out both;
+}
+
+/* Sayaç büyüme efekti */
+@keyframes scale-pop {
+  0% { transform: scale(0.8); opacity: 0; }
+  60% { transform: scale(1.05); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.scale-pop {
+  animation: scale-pop 0.4s ease-out both;
+}
+
+/* ─── Buton hover efektleri ──────────────────────────────────── */
+
+.glass-card {
+  background: hsl(var(--card) / 0.6);
+  backdrop-filter: blur(12px);
+  border: 1px solid hsl(var(--border) / 0.3);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease, transform 0.2s ease;
+}
+
+.glass-card:hover {
+  border-color: hsl(var(--primary) / 0.15);
+}
+
+/* ─── ADS-B Uçak marker stili ────────────────────────────────── */
+
+.aircraft-marker {
+  transition: transform 0.3s ease;
+  cursor: pointer;
+}
+
+.aircraft-marker:hover {
+  filter: brightness(1.3) drop-shadow(0 0 6px rgba(245, 158, 11, 0.8));
+}
+
+/* ─── Leaflet popup dark theme ───────────────────────────────── */
+
+.leaflet-popup-content-wrapper {
+  background: hsl(224 71% 8% / 0.95) !important;
+  color: #e5e7eb !important;
+  border: 1px solid hsl(199 89% 48% / 0.2) !important;
+  border-radius: 10px !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5) !important;
+  backdrop-filter: blur(10px);
+}
+
+.leaflet-popup-tip {
+  background: hsl(224 71% 8% / 0.95) !important;
+  border: 1px solid hsl(199 89% 48% / 0.2) !important;
+}
+
+.leaflet-popup-close-button {
+  color: hsl(199 89% 48% / 0.6) !important;
+}
+
+.leaflet-popup-close-button:hover {
+  color: hsl(199 89% 48%) !important;
+}
+
+/* ─── Responsive: Mobil panel scroll ─────────────────────────── */
+
+.panel-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--muted)) transparent;
+}
+
+@media (max-width: 1023px) {
+  .panel-scroll {
+    max-height: 45vh;
+  }
+}
+
+/* ─── Range input custom styling ─────────────────────────────── */
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: hsl(199 89% 48%);
+  cursor: pointer;
+  box-shadow: 0 0 6px hsl(199 89% 48% / 0.5);
+  transition: box-shadow 0.2s ease;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  box-shadow: 0 0 12px hsl(199 89% 48% / 0.8);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: hsl(199 89% 48%);
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 0 6px hsl(199 89% 48% / 0.5);
+}
+
+/* ─── Tabular nums for consistent number widths ──────────────── */
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
