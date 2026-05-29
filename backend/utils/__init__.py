@@ -1,0 +1,1 @@
+# SkyOptimizer AI — Yardımcı Modüller

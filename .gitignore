@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+venv/
+.env
+
+# Node
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+credentials.json
+openweatherapi.txt
+
+# ML Models (büyük dosyalar)
+ml/models/*.pkl
+ml/data/*.csv
+
+# Cache
+backend/data/cache/
+
+# System Prompt
+SYSTEM_PROMPT.md
+
