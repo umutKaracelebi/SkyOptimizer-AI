@@ -34,7 +34,3 @@ ml/data/*.csv
 
 # Cache
 backend/data/cache/
-
-# System Prompt
-SYSTEM_PROMPT.md
-
