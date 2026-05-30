@@ -265,10 +265,22 @@ deneyap-takimlasma-proje/
 
 ## 📋 Proje Bilgisi
 
-| **Geliştirici Takım** | **İnoTürk** |
-| **Program** | Deneyap Takımlaşma Projesi 2026 |
-| **Öncelik Bölgesi** | Türkiye Hava Sahası |
-| **Lisans** | MIT |
+<table>
+  <tbody>
+    <tr>
+      <td><strong>Geliştirici Takım</strong></td>
+      <td><strong>İnoTürk</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Program</strong></td>
+      <td>Deneyap Takımlaşma Projesi 2026</td>
+    </tr>
+    <tr>
+      <td><strong>Lisans</strong></td>
+      <td>MIT</td>
+    </tr>
+  </tbody>
+</table>
 
 ---
 
