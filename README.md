@@ -265,8 +265,6 @@ deneyap-takimlasma-proje/
 
 ## 📋 Proje Bilgisi
 
-| | |
-|---|---|
 | **Geliştirici Takım** | **İnoTürk** |
 | **Program** | Deneyap Takımlaşma Projesi 2026 |
 | **Öncelik Bölgesi** | Türkiye Hava Sahası |
