@@ -4,14 +4,13 @@ import {
   Radio, Eye, EyeOff,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Polyline, Marker, Popup, CircleMarker, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { searchAirports, optimizeRoute, getLiveFlights } from '../services/api';
-import type { Airport, Flight, OptimizeResult, RouteInfo } from '../services/api';
+import type { Airport, Flight, OptimizeResult } from '../services/api';
 import StatsPanel from '../components/ui/StatsPanel';
 import type { SavingsData } from '../components/ui/StatsPanel';
-import ComparePanel from '../components/ui/ComparePanel';
 
 /* ── Leaflet ikon tanımları ────────────────────────────────────── */
 const airportIcon = L.divIcon({
@@ -27,21 +26,6 @@ const waypointIcon = L.divIcon({
   iconSize: [6, 6],
   iconAnchor: [3, 3],
 });
-
-/** Uçak ikonu — true_track açısına göre döndürülür */
-function aircraftIcon(track: number) {
-  return L.divIcon({
-    className: '',
-    html: `<div style="
-      font-size:16px;
-      transform:rotate(${Math.round(track || 0)}deg);
-      filter:drop-shadow(0 0 4px rgba(245,158,11,0.6));
-      line-height:1;
-    ">✈</div>`,
-    iconSize: [18, 18],
-    iconAnchor: [9, 9],
-  });
-}
 
 /* ── Waypoint → Polyline dönüştürücü ──────────────────────────── */
 /**
@@ -74,25 +58,120 @@ function toPolyline(
   return result;
 }
 
-/* ── Great-circle başlangıç yönü ───────────────────────────────── */
 /**
- * İki koordinat arasındaki başlangıç yönünü (bearing, derece) hesaplar.
- * Backend'deki utils/geo.initial_bearing ile aynı formül — sadece
- * boylam farkını kullanan kaba atan2 yaklaşımı yüksek enlemlerde
- * belirgin hata verir.
+ * Rotayı tarih çizgisinde (±180°) BÖLER.
+ *
+ * Neden: unwrap edilmiş boylamlar ±180'in dışına çıkar (JFK→HKG'de -246°'ye
+ * kadar). Leaflet bu noktaları dünya kopyalarında farklı yerlere çizdiği için
+ * haritada düzlemin öbür ucuna giden kopuk bir çizgi oluşuyordu. Her parça
+ * kendi dünya kopyasında kalacak şekilde bölünüp sınıra interpolasyon
+ * noktası ekleniyor; böylece çizgi kesintisiz ve doğru görünür.
  */
-function initialBearing(
-  lat1: number, lon1: number, lat2: number, lon2: number,
-): number {
+function toSegments(
+  waypoints: { latitude: number; longitude: number }[],
+): [number, number][][] {
+  if (!waypoints || waypoints.length === 0) return [];
+
+  // 1) Boylamları sürekli hâle getir (unwrap)
+  const pts = [{ lat: waypoints[0].latitude, lon: waypoints[0].longitude }];
+  for (let i = 1; i < waypoints.length; i++) {
+    let lon = waypoints[i].longitude;
+    const prev = pts[i - 1].lon;
+    while (lon - prev > 180) lon -= 360;
+    while (lon - prev < -180) lon += 360;
+    pts.push({ lat: waypoints[i].latitude, lon });
+  }
+
+  // 2) Dünya kopyası indeksi: 0 → [-180,180), -1 → bir batı, +1 → bir doğu
+  const worldIndex = (lon: number) => Math.floor((lon + 180) / 360);
+  const normalize = (lon: number, k: number) => lon - 360 * k;
+
+  const segments: [number, number][][] = [];
+  let k = worldIndex(pts[0].lon);
+  let current: [number, number][] = [[pts[0].lat, normalize(pts[0].lon, k)]];
+
+  for (let i = 1; i < pts.length; i++) {
+    const p = pts[i];
+    const prev = pts[i - 1];
+    const kNext = worldIndex(p.lon);
+
+    if (kNext === k) {
+      current.push([p.lat, normalize(p.lon, k)]);
+      continue;
+    }
+
+    // Sınırı geçiyor: kesişim enlemini interpolasyonla bul
+    const seam = kNext > k ? 180 : -180;
+    const t = (seam - prev.lon) / (p.lon - prev.lon || 1);
+    const seamLat = prev.lat + (p.lat - prev.lat) * t;
+
+    current.push([seamLat, normalize(seam, k)]);
+    if (current.length > 1) segments.push(current);
+
+    k = kNext;
+    current = [
+      [seamLat, normalize(seam, k)],
+      [p.lat, normalize(p.lon, k)],
+    ];
+  }
+
+  if (current.length > 1) segments.push(current);
+  else if (current.length === 1 && segments.length > 0) {
+    segments[segments.length - 1].push(current[0]);
+  }
+
+  return segments;
+}
+
+/* ── Mesafe / koridor yardımcıları ─────────────────────────────── */
+
+const EARTH_RADIUS_NM = 3440.065;
+
+/** İki koordinat arası haversine mesafesi (NM). */
+function distanceNm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const toRad = (d: number) => (d * Math.PI) / 180;
-  const toDeg = (r: number) => (r * 180) / Math.PI;
-  const φ1 = toRad(lat1);
-  const φ2 = toRad(lat2);
-  const Δλ = toRad(lon2 - lon1);
-  const y = Math.sin(Δλ) * Math.cos(φ2);
-  const x =
-    Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
-  return (toDeg(Math.atan2(y, x)) + 360) % 360;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * EARTH_RADIUS_NM * Math.asin(Math.sqrt(a));
+}
+
+/**
+ * Noktanın rota hattına en yakın mesafesi (NM).
+ * Eşdikdörtgen (equirectangular) yaklaşımıyla nokta-doğru parçası mesafesi;
+ * 150 NM'lik koridor için fazlasıyla yeterli.
+ */
+function distanceToRoute(
+  lat: number,
+  lon: number,
+  points: [number, number][],
+): number {
+  if (points.length === 0) return Infinity;
+  if (points.length === 1) return distanceNm(lat, lon, points[0][0], points[0][1]);
+
+  let best = Infinity;
+  for (let i = 0; i < points.length - 1; i++) {
+    const [lat1, lon1] = points[i];
+    const [lat2, lon2] = points[i + 1];
+
+    // Yerel düzlem yaklaşımı
+    const cosLat = Math.cos((lat * Math.PI) / 180);
+    const ax = lon1 * cosLat, ay = lat1;
+    const bx = lon2 * cosLat, by = lat2;
+    const px = lon * cosLat, py = lat;
+
+    const dx = bx - ax, dy = by - ay;
+    const lenSq = dx * dx + dy * dy;
+    let t = lenSq === 0 ? 0 : ((px - ax) * dx + (py - ay) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+
+    const nearestLat = ay + t * dy;
+    const nearestLon = (ax + t * dx) / cosLat;
+    best = Math.min(best, distanceNm(lat, lon, nearestLat, nearestLon));
+  }
+  return best;
 }
 
 /* ── Harita görünümünü güncelleyen yardımcı ─────────────────────── */
@@ -136,21 +215,23 @@ export default function OptimizerPage() {
   const [mapZoom, setMapZoom] = useState(3);
   const [mapBounds, setMapBounds] = useState<[[number, number], [number, number]] | null>(null);
 
+  /* ── Türetilmiş rota değerleri (trafik filtresi de kullanıyor) ── */
+  const stdRoute  = result?.standard_route;
+  const optRoute  = result?.optimized_route;
+  const savings   = result?.savings;
+
   /* ── ADS-B canlı trafik state ──────────────────────────────── */
   const [showTraffic, setShowTraffic] = useState(false);
+  // 'route' → yalnızca rota koridorundaki hava sahası, 'world' → tüm dünya
+  const [trafficMode, setTrafficMode] = useState<'route' | 'world'>('route');
   const [liveFlights, setLiveFlights] = useState<Flight[]>([]);
   const [trafficLoading, setTrafficLoading] = useState(false);
   const [trafficCount, setTrafficCount] = useState(0);
+  const [trafficError, setTrafficError] = useState('');
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  /* ── Stats / Compare state ─────────────────────────────────── */
+  /* ── Stats state ───────────────────────────────────────────── */
   const [latestSavings, setLatestSavings] = useState<SavingsData | null>(null);
-  const [compareData, setCompareData] = useState<{
-    distance_nm: number;
-    wind_speed_kts: number;
-    wind_direction: number;
-    heading: number;
-  } | null>(null);
 
   /* ── havalimanı arama ──────────────────────────────────────── */
   const handleSearch = useCallback(async (query: string, type: 'origin' | 'dest') => {
@@ -182,29 +263,68 @@ export default function OptimizerPage() {
 
   /* ── ADS-B canlı trafik ───────────────────────────────────── */
   const fetchTraffic = useCallback(async () => {
-    if (!selectedOrigin || !selectedDest) return;
     setTrafficLoading(true);
+    setTrafficError('');
     try {
-      // Rota koridoru: kalkış/varış arasında ±3° padding
-      const lats = [selectedOrigin.latitude, selectedDest.latitude];
-      const lons = [selectedOrigin.longitude, selectedDest.longitude];
-      const pad = 3; // derece padding
-      const bbox = {
-        lamin: Math.min(...lats) - pad,
-        lamax: Math.max(...lats) + pad,
-        lomin: Math.min(...lons) - pad,
-        lomax: Math.max(...lons) + pad,
-      };
-      const data = await getLiveFlights(bbox);
-      if (data?.flights) {
-        setLiveFlights(data.flights);
-        setTrafficCount(data.count || data.flights.length);
+      // Rota modunda kaba bbox + koridor filtresi;
+      // dünya modunda tüm küre (OpenSky tek istekte döndürür).
+      let data;
+      let routeLine: [number, number][] = [];
+
+      if (trafficMode === 'world') {
+        data = await getLiveFlights({
+          lamin: -85, lamax: 85, lomin: -180, lomax: 180,
+        });
+      } else {
+        if (!selectedOrigin || !selectedDest) {
+          setLiveFlights([]);
+          setTrafficCount(0);
+          setTrafficLoading(false);
+          return;
+        }
+
+        // Koridor hattı: optimize rota varsa onu, yoksa kalkış→varış düz hattı
+        routeLine = optRoute
+          ? toPolyline(optRoute.waypoints)
+          : [
+              [selectedOrigin.latitude, selectedOrigin.longitude],
+              [selectedDest.latitude, selectedDest.longitude],
+            ];
+
+        const lats = routeLine.map(p => p[0]);
+        const lons = routeLine.map(p => p[1]);
+        const pad = 4; // derece — koridor filtresi için pay
+        data = await getLiveFlights({
+          lamin: Math.max(-85, Math.min(...lats) - pad),
+          lamax: Math.min(85, Math.max(...lats) + pad),
+          lomin: Math.max(-180, Math.min(...lons) - pad),
+          lomax: Math.min(180, Math.max(...lons) + pad),
+        });
       }
-    } catch {
-      /* ignore — cache kullanılır */
+
+      if (data?.flights) {
+        let flights = data.flights;
+
+        // Rota modunda bbox dikdörtgeni yeterli değil — hattan uzak uçakları at
+        if (trafficMode === 'route' && routeLine.length > 1) {
+          const CORRIDOR_NM = 150;
+          flights = flights.filter(f =>
+            distanceToRoute(f.latitude, f.longitude, routeLine) <= CORRIDOR_NM
+          );
+        }
+
+        setLiveFlights(flights);
+        setTrafficCount(flights.length);
+        if (data.error) setTrafficError(String(data.error));
+      } else {
+        setLiveFlights([]);
+        setTrafficCount(0);
+      }
+    } catch (e) {
+      setTrafficError(String(e));
     }
     setTrafficLoading(false);
-  }, [selectedOrigin, selectedDest]);
+  }, [trafficMode, selectedOrigin, selectedDest, optRoute]);
 
   useEffect(() => {
     if (showTraffic) {
@@ -213,6 +333,7 @@ export default function OptimizerPage() {
     } else {
       setLiveFlights([]);
       setTrafficCount(0);
+      setTrafficError('');
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
@@ -275,23 +396,6 @@ export default function OptimizerPage() {
             cost_saved_usd: s.cost_saved_usd || 0,
           });
         }
-
-        // Compare panel için veri hazırla
-        const wind = data?.wind_info;
-        const stdRoute = data?.standard_route;
-        if (wind && stdRoute) {
-          setCompareData({
-            distance_nm: stdRoute.total_distance_nm || 0,
-            wind_speed_kts: wind.avg_speed_kts || 0,
-            wind_direction: wind.avg_direction_deg || 0,
-            heading: initialBearing(
-              selectedOrigin.latitude,
-              selectedOrigin.longitude,
-              selectedDest.latitude,
-              selectedDest.longitude,
-            ),
-          });
-        }
       }
     } catch (e) {
       setError(`Optimizasyon hatası: ${e}`);
@@ -300,12 +404,8 @@ export default function OptimizerPage() {
   };
 
   /* ── yardımcılar ───────────────────────────────────────────── */
-  const routeToPositions = (route: RouteInfo | undefined): [number, number][] =>
-    route?.waypoints ? toPolyline(route.waypoints) : [];
 
-  const stdRoute = result?.standard_route;
-  const optRoute = result?.optimized_route;
-  const savings  = result?.savings;
+
 
   /* ═══════════════ JSX ═══════════════════════════════════════════ */
   return (
@@ -477,11 +577,43 @@ export default function OptimizerPage() {
                 </button>
               </div>
               {showTraffic && (
-                <div className="mt-2 flex items-center gap-2 text-[10px] text-gray-400">
-                  {trafficLoading && <Loader2 size={10} className="animate-spin text-amber-400" />}
-                  <span className="text-amber-400 font-bold">{trafficCount}</span> uçak görünüyor
-                  <span className="ml-auto text-gray-600">60sn yenileme</span>
-                </div>
+                <>
+                  {/* Kapsam seçimi: rota hava sahası ↔ tüm dünya */}
+                  <div className="mt-2 grid grid-cols-2 gap-1 p-1 rounded-lg bg-black/40 border border-gray-800">
+                    {([
+                      { key: 'route' as const, label: 'ROTA SAHASI' },
+                      { key: 'world' as const, label: 'TÜM DÜNYA' },
+                    ]).map(opt => (
+                      <button
+                        key={opt.key}
+                        onClick={() => setTrafficMode(opt.key)}
+                        className={`py-1 rounded-md text-[9px] font-bold tracking-wide transition-colors ${
+                          trafficMode === opt.key
+                            ? 'bg-amber-500/20 text-amber-400'
+                            : 'text-gray-500 hover:text-gray-400'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="mt-2 flex items-center gap-2 text-[10px] text-gray-400">
+                    {trafficLoading && <Loader2 size={10} className="animate-spin text-amber-400" />}
+                    <span className="text-amber-400 font-bold">{trafficCount}</span>
+                    {trafficMode === 'route' ? 'uçak rotada (150 NM)' : 'uçak dünya geneli'}
+                    <span className="ml-auto text-gray-600">60sn</span>
+                  </div>
+
+                  {trafficMode === 'route' && (!selectedOrigin || !selectedDest) && (
+                    <p className="mt-1 text-[9px] text-gray-500 leading-snug">
+                      Rota hava sahası için kalkış ve varış seçilmeli.
+                    </p>
+                  )}
+                  {trafficError && (
+                    <p className="mt-1 text-[9px] text-red-400/80 leading-snug">{trafficError}</p>
+                  )}
+                </>
               )}
             </div>
 
@@ -555,13 +687,8 @@ export default function OptimizerPage() {
               </div>
             )}
 
-            {/* -- AI vs Fizik Karşılaştırma -- */}
-            <div className="fade-in-up" style={{ animationDelay: '0.2s' }}>
-              <ComparePanel routeData={compareData} />
-            </div>
-
             {/* -- Birikimli Tasarruf -- */}
-            <div className="fade-in-up" style={{ animationDelay: '0.25s' }}>
+            <div className="fade-in-up" style={{ animationDelay: '0.2s' }}>
               <StatsPanel latestSavings={latestSavings} />
             </div>
           </div>
@@ -577,6 +704,7 @@ export default function OptimizerPage() {
             zoomControl={false}
             minZoom={2}
             worldCopyJump={true}
+            preferCanvas={true}
           >
             <MapUpdater center={mapCenter} zoom={mapZoom} bounds={mapBounds} />
             {/*
@@ -596,21 +724,24 @@ export default function OptimizerPage() {
               maxZoom={16}
             />
 
-            {/* Optimize rota — cyan parlak çizgi (önce çizilir, altta kalır) */}
-            {optRoute && (
+            {/* Optimize rota — cyan parlak çizgi (önce çizilir, altta kalır).
+                Tarih çizgisini geçen rotalar segmentlere bölünerek çizilir. */}
+            {optRoute && toSegments(optRoute.waypoints).map((segment, i) => (
               <Polyline
-                positions={routeToPositions(optRoute)}
+                key={`opt-${i}`}
+                positions={segment}
                 pathOptions={{ color: '#00d4ff', weight: 4, opacity: 0.85 }}
               />
-            )}
+            ))}
 
             {/* Standart rota — kırmızı kesik çizgi (üstte çizilir, her zaman görünür) */}
-            {stdRoute && (
+            {stdRoute && toSegments(stdRoute.waypoints).map((segment, i) => (
               <Polyline
-                positions={routeToPositions(stdRoute)}
+                key={`std-${i}`}
+                positions={segment}
                 pathOptions={{ color: '#ef4444', weight: 2.5, opacity: 0.7, dashArray: '10,8' }}
               />
-            )}
+            ))}
 
             {/* Havalimanı marker'ları — rota varsa unwrapped koordinat kullan */}
             {selectedOrigin && (() => {
@@ -652,23 +783,29 @@ export default function OptimizerPage() {
                 });
             })()}
 
-            {/* ── ADS-B Canlı Uçak Marker'ları ─────────────────── */}
+            {/* ── ADS-B Canlı Uçaklar ──────────────────────────────
+                Dünya modunda 10.000+ uçak dönebildiği için divIcon yerine
+                canvas üzerine çizilen CircleMarker kullanılıyor (preferCanvas). */}
             {showTraffic && liveFlights.map(flight => {
               if (!flight.latitude || !flight.longitude) return null;
               return (
-                <Marker
+                <CircleMarker
                   key={flight.icao24}
-                  position={[flight.latitude, flight.longitude]}
-                  icon={aircraftIcon(flight.true_track)}
+                  center={[flight.latitude, flight.longitude]}
+                  radius={2.5}
+                  pathOptions={{
+                    color: '#f59e0b',
+                    weight: 1,
+                    fillColor: '#fbbf24',
+                    fillOpacity: 0.85,
+                  }}
                 >
                   <Popup>
                     <div className="text-xs font-mono space-y-0.5 min-w-[140px]">
                       <div className="font-bold text-amber-600 text-sm">
                         {flight.callsign || flight.icao24}
                       </div>
-                      <div className="text-gray-600">
-                        {flight.origin_country}
-                      </div>
+                      <div className="text-gray-600">{flight.origin_country}</div>
                       <hr className="border-gray-300 my-1" />
                       <div className="flex justify-between">
                         <span className="text-gray-500">İrtifa</span>
@@ -684,7 +821,7 @@ export default function OptimizerPage() {
                       </div>
                     </div>
                   </Popup>
-                </Marker>
+                </CircleMarker>
               );
             })}
           </MapContainer>

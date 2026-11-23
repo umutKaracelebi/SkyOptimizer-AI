@@ -158,7 +158,6 @@ ekliyordu. Yuvarlama yalnızca sunum katmanında (API yanıtı) yapılır.
 ### Bileşenler
 - `hero-globe.tsx` — Three.js wireframe dünya + DottedSurface yerçekimi efekti
 - `StatsPanel.tsx` — Yakıt/süre/CO₂ tasarruf kartları
-- `ComparePanel.tsx` — AI vs Fizik motoru karşılaştırma tablosu
 - `dotted-surface.tsx` — Three.js noktalı yüzey (gravity well efekti)
 - `wireframe-dotted-globe.tsx` — Dönen noktalı dünya küresi
 
@@ -294,7 +293,6 @@ deneyap-takimlasma-proje/
 │   │   │   ├── hero-globe.tsx     # Hero section + pipeline
 │   │   │   ├── dotted-surface.tsx # Three.js gravity surface
 │   │   │   ├── StatsPanel.tsx     # Tasarruf istatistikleri
-│   │   │   └── ComparePanel.tsx   # AI vs Fizik karşılaştırma
 │   │   ├── services/
 │   │   │   └── api.ts             # Backend API istemcisi
 │   │   └── index.css              # Global stiller

@@ -34,7 +34,6 @@ graph TB
         OP[Optimizer Sayfası<br/>Leaflet Harita]
         AP[Hakkında Sayfası]
         SP[StatsPanel]
-        CP[ComparePanel]
     end
 
     subgraph Backend["Backend (FastAPI)"]
@@ -268,8 +267,7 @@ deneyap-takimlasma-proje/
     │   │   └── api.ts            # TypeScript API client
     │   └── components/ui/
     │       ├── StatsPanel.tsx     # Birikimli tasarruf sayaçları
-    │       ├── ComparePanel.tsx   # AI vs Fizik karşılaştırma
-    │       ├── hero-globe.tsx     # Globe hero bileşeni
+        │       ├── hero-globe.tsx     # Globe hero bileşeni
     │       └── wireframe-dotted-globe.tsx  # D3.js dönen dünya
     └── package.json
 ```

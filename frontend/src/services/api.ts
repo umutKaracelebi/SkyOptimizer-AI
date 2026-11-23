@@ -159,6 +159,8 @@ export interface LiveFlightsResult {
   count: number;
   from_cache: boolean;
   remaining: number;
+  /** Kota/limit nedeniyle boş döndüyse sebebi */
+  error?: string;
 }
 
 export async function getLiveFlights(bbox?: {
