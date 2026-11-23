@@ -139,3 +139,54 @@ test("paylaşım linki ve JSON raporu çalışır", async ({ page, context }) =>
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe("skyoptimizer-LTFM-EGLL.json");
 });
+
+
+test("güvenilmez iz karşılaştırma iddiası üretmez", async ({ page }) => {
+  await mockApi(page);
+  // Eksik ADS-B kapsaması: tasarruf rakamları gösterilmemeli.
+  await page.route("**/api/validate", (route) => {
+    const body = fixture("validate.json") as Record<string, unknown>;
+    return route.fulfill({
+      status: 200,
+      headers: CORS,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ...body,
+        reliable: false,
+        reliability_note: "iz rotanın yalnızca %5'ini kapsıyor. Yakıt karşılaştırması güvenilir değil.",
+      }),
+    });
+  });
+
+  await page.goto(ROUTE);
+  await expect(page.getByText("AĞIRLIKLI MALİYET")).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("button", { name: "ÇALIŞTIR" }).click();
+
+  await expect(page.getByText(/yalnızca %5'ini kapsıyor/)).toBeVisible();
+  await expect(page.getByText("FARK (AŞIM)")).toHaveCount(0);
+  await expect(page.getByText("BAW679")).toBeVisible();
+});
+
+
+test("vekil performans tipi ve pozitif tasarruf gösterilir", async ({ page }) => {
+  await mockApi(page);
+  await page.route("**/api/validate", (route) =>
+    route.fulfill({
+      status: 200,
+      headers: CORS,
+      contentType: "application/json",
+      body: JSON.stringify(fixture("validate-proxy.json")),
+    })
+  );
+
+  await page.goto(ROUTE);
+  await expect(page.getByText("AĞIRLIKLI MALİYET")).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("button", { name: "ÇALIŞTIR" }).click();
+
+  await expect(page.getByText("VIR26Q")).toBeVisible();
+  await expect(page.getByText("A339 → A333 vekil")).toBeVisible();
+  await expect(page.getByText(/Gerçek uçuşa göre %5.5 yakıt/)).toBeVisible();
+  await expect(page.getByText("FARK")).toBeVisible();
+  await page.getByText("Varsayımlar ▾").click();
+  await expect(page.getByText(/A333 vekil performansı/)).toBeVisible();
+});

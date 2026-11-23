@@ -259,6 +259,19 @@ async def find_optimal_route(
         ),
     }
 
+    if not perf.known_type:
+        warning = (
+            f"{aircraft_type} OpenAP veritabanında bulunamadı; B738 "
+            "performansıyla yaklaşık hesaplandı."
+        )
+    elif perf.is_proxy:
+        warning = (
+            f"{aircraft_type} için OpenAP'ta doğrudan model yok; "
+            f"{perf.performance_type} vekil performansı kullanıldı (±%5)."
+        )
+    else:
+        warning = None
+
     return {
         "optimized_route": optimized,
         "standard_route": standard,
@@ -291,6 +304,8 @@ async def find_optimal_route(
         "aircraft_performance": {
             "aircraft_type": aircraft_type,
             "known_type": perf.known_type,
+            "performance_type": perf.performance_type,
+            "is_proxy": perf.is_proxy,
             "cost_index": int(ci),
             "mach": round(perf.mach_for_ci(ci), 3),
             "cruise_altitude_ft": optimized["cruise_altitude_ft"],
@@ -300,10 +315,7 @@ async def find_optimal_route(
         },
         "method_notes": METHOD_NOTES,
         "warnings": (
-            [] if perf.known_type else [
-                f"{aircraft_type} OpenAP veritabanında bulunamadı; B738 "
-                "performansıyla yaklaşık hesaplandı."
-            ]
+            [] if not warning else [warning]
         ),
     }
 

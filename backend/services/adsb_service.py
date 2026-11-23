@@ -27,16 +27,24 @@ from services.cache_manager import cache, opensky_limiter
 # OAuth2 token cache
 _access_token: Optional[str] = None
 _token_expiry: float = 0
+# Geçersiz kimlik bilgisiyle her istekte token POST'u yapıp OpenSky'yi
+# kilitlememek için başarısızlığı 10 dakika hatırla.
+_token_failure_until: float = 0
+# 429 sonrası kısa süre istek atma (OpenSky anonim limiti).
+_rate_limited_until: float = 0
 
 
 async def _get_access_token() -> Optional[str]:
     """OpenSky OAuth2 access token al."""
-    global _access_token, _token_expiry
+    global _access_token, _token_expiry, _token_failure_until
 
     if _access_token and time.time() < _token_expiry:
         return _access_token
 
     if not OPENSKY_CLIENT_ID or not OPENSKY_CLIENT_SECRET:
+        return None
+
+    if time.time() < _token_failure_until:
         return None
 
     try:
@@ -55,11 +63,13 @@ async def _get_access_token() -> Optional[str]:
                 # Token'ı 5 dakika erken yenile
                 _token_expiry = time.time() + data.get("expires_in", 3600) - 300
                 return _access_token
+            _token_failure_until = time.time() + 600
             print(
                 "[OpenSky] Token alınamadı "
-                f"(HTTP {response.status_code}) — anonim erişim kullanılacak."
+                f"(HTTP {response.status_code}) — 10 dk anonim erişim."
             )
     except Exception as e:
+        _token_failure_until = time.time() + 120
         print(f"[OpenSky] Token alınamadı: {e}")
 
     return None
@@ -72,6 +82,10 @@ async def _opensky_get(path: str, params: dict) -> tuple:
     Returns:
         (status_code, payload) — payload hata durumunda {"error": ...}
     """
+    global _rate_limited_until
+    if time.time() < _rate_limited_until:
+        return 429, {"error": "OpenSky rate limit aşıldı (429) — kısa süre bekleniyor"}
+
     if not opensky_limiter.can_request():
         # 5 saniyelik minimum aralık ise beklenir; günlük kota ise durulur.
         if opensky_limiter.remaining_requests <= 0:
@@ -101,7 +115,14 @@ async def _opensky_get(path: str, params: dict) -> tuple:
         except ValueError:
             return 200, None
     if response.status_code == 429:
-        return 429, {"error": "OpenSky rate limit aşıldı (429)"}
+        _rate_limited_until = time.time() + 45
+        retry_s = response.headers.get("X-Rate-Limit-Retry-After-Seconds")
+        try:
+            retry_min = max(1, int(float(retry_s)) // 60)
+            detail = f" — yaklaşık {retry_min} dk sonra yenilenir"
+        except (TypeError, ValueError):
+            detail = ""
+        return 429, {"error": f"OpenSky uçuş listesi kotası doldu (429){detail}"}
     if response.status_code == 403:
         return 403, {
             "error": (

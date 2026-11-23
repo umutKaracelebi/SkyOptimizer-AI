@@ -257,15 +257,17 @@ Model gerçek uçuştan daha kötü çıkarsa bu gizlenmez; `optimized_is_better
 ve gerekçe (`caveats`) gösterilir. Tipik nedenler: ATC yönlendirmesi, gerçek cruise
 seviyesinin modelden farklı olması, iniş/kalkış manevraları ve rüzgâr tahmini hatası.
 
-> İz tabanlı yakıt tahmini, yer hızını TAS kabul ettiği için yaklaşık **±%3**
-> belirsizlik taşır; sonuç bir kanıt değil, model kalibrasyon aracıdır.
+> İz tabanlı yakıt tahmini, rüzgâr bilinmediği için TAS'ı cost index nominal
+> hızından alır ve yaklaşık **±%5** belirsizlik taşır. Eksik ADS-B kapsaması,
+> kopuk zaman damgası veya fiziksel olarak tutarsız yakıt akışı tespit edilirse
+> tasarruf rakamı gösterilmez (`reliable: false` + gerekçe).
 
 ---
 
 ## 🧪 Testler
 
 ```bash
-# Backend — 62 test (ağ erişimi gerekmez)
+# Backend — 67 test (ağ erişimi gerekmez)
 cd backend
 venv/Scripts/python.exe -m pytest tests/ -q
 
@@ -277,7 +279,7 @@ npm run test:e2e
 
 Backend testleri fizik (fazlar, cost index, kütle azalması, yakıt kapasitesi),
 graf/A* (antimeridyen, hava sahası kaçınma, ölçülebilir tasarruf), rüzgâr örnekleme
-ve API sözleşmelerini kapsar. Playwright testleri (4 senaryo) optimizasyon sonuçlarının,
+ve API sözleşmelerini kapsar. Playwright testleri (6 senaryo) optimizasyon sonuçlarının,
 uçak ikonlarının/detay panelinin, gerçek uçuş doğrulama kartının ve paylaşım/JSON
 akışının uçtan uca çalıştığını doğrular. CI: `.github/workflows/ci.yml` (pytest + build + Playwright).
 
@@ -360,15 +362,23 @@ deneyap-takimlasma-proje/
 
 - **OpenSky kimlik bilgileri**: repodaki `credentials.json` geçersizse token isteği 403
 döner ve sistem **anonim** moda düşer. Anonim erişimde geçmiş uçuş penceresi
-**12 saat**tir; daha uzun doğrulama istekleri reddedilir. Canlı trafik ve 12 saatlik
-doğrulama bu modda da çalışır.
+**12 saat**tir. Anonim uçuş listesi kotası tükenirse OpenSky 429 döner; arayüz
+yenilenme süresini bildirir. Başarılı doğrulamalar 10 dk cache'lenir, böylece
+tekrarlanan tıklamalar kotayı tüketmez. Gerçek kullanım için geçerli OpenSky
+anahtarı önerilir.
 - **Kısıtlı hava sahaları**: `restricted_airspaces.geojson` yalnızca 4 örnek FAA
 SUA alanı içerir (demo). Gerçek operasyonel kullanım için resmi AIRAC/SUA verisi
 `RESTRICTED_AIRSPACE_FILE` ile beslenmelidir.
 - **Uçak kimliği**: tip/tescil/işletmeci hexdb.io'ya, sınıflandırma ADS-B emitter
 kategorisine ve hız/irtifa sezgisine dayanır. Alçak irtifada jet ile turboprop
 ayrımı güvenilir değildir; bilinmeyen tipler `unknown`/`narrow` varsayılır.
-- **İz tabanlı yakıt**: yer hızı TAS kabul edilir; rüzgâr düzeltmesi yoktur (~±%3).
+- **İz tabanlı yakıt**: TAS, cost index nominal hızından alınır; gerçek rüzgâr
+bilinmediği için ~±%5 belirsizlik vardır. Uzun ADS-B boşlukları süreye dahil
+edilir, mesafe/süre tutarsızlığında karşılaştırma reddedilir.
+- **OpenAP kapsamı**: A339, A35K, B78X, B779 gibi tipler OpenAP 2.4'te yoktur;
+en yakın gövde ailesi (A333, A359, B789, B77W) vekil olarak kullanılır ve hem
+API'de hem arayüzde açıkça belirtilir. Bilinmeyen tip sessizce B738'e düşmez —
+`known_type: false` döner ve doğrulama karşılaştırmayı reddeder.
 - **ATC / hava yolu yapısı**: model serbest koridor varsayar; gerçek seyir yolları,
 SID/STAR ve slot kısıtları kapsam dışıdır. Doğrulama sonucu bu yüzden gerçek
 uçuştan kötü çıkabilir ve bu durum arayüzde dürüstçe belirtilir.

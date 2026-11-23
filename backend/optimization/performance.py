@@ -56,6 +56,20 @@ SPEED_FUEL_EXPONENT = 1.6
 # Yakıt fiyatı (USD/kg, Jet A-1 küresel ortalama)
 FUEL_PRICE_USD_PER_KG = 0.80
 
+# OpenAP 2.4'te doğrudan bulunmayan tipler için en yakın vekil.
+# Örn. A339 (A330-900) → A333 (A330-300): aynı gövde ailesi, benzer
+# yakıt akışı. Vekil kullanıldığında API yanıtı bunu açıkça bildirir.
+_OPENAP_PROXIES = {
+    "A339": "A333",
+    "A338": "A332",
+    "A35K": "A359",
+    "B78X": "B789",
+    "B779": "B77W",
+    "E295": "E195",
+    "BCS1": "A319",
+    "BCS3": "A320",
+}
+
 # Basit (OpenAP yoksa) yedek model parametreleri
 _FALLBACK = {
     "B738": {"oew": 41400, "mtow": 79000, "nominal_mach": 0.789, "mmo": 0.82,
@@ -93,28 +107,53 @@ class AircraftPerformance:
         self.ac = self.aircraft_type
         self.available = False
         self.known_type = False
+        # OpenAP'ta gerçekten kullanılan tip (vekil olabilir).
+        self.performance_type: Optional[str] = None
+        self.is_proxy = False
 
         if OPENAP_AVAILABLE:
-            try:
-                # use_synonym: A21N→A321, B38M→B737 gibi yeni tipler OpenAP
-                # veritabanında doğrudan yoksa en yakın türe eşlenir.
-                self.props = prop.aircraft(self.ac, use_synonym=True)
-                self.fuelflow = FuelFlow(ac=self.ac, use_synonym=True)
-                cruise = self.props.get("cruise", {}) or {}
+            candidates = [self.ac]
+            proxy = _OPENAP_PROXIES.get(self.ac)
+            if proxy:
+                candidates.append(proxy)
+            last_error = None
+            for candidate in candidates:
+                try:
+                    # use_synonym: A21N→A321, B38M→B737 gibi yeni tipler
+                    # OpenAP veritabanında doğrudan yoksa en yakın türe eşlenir.
+                    props = prop.aircraft(candidate, use_synonym=True)
+                    fuelflow = FuelFlow(ac=candidate, use_synonym=True)
+                except Exception as exc:  # pragma: no cover
+                    last_error = exc
+                    continue
+
+                self.props = props
+                self.fuelflow = fuelflow
+                self.performance_type = candidate
+                self.is_proxy = candidate != self.ac
+                cruise = props.get("cruise", {}) or {}
                 self.nominal_mach = float(cruise.get("mach") or 0.78)
                 self.nominal_alt_ft = float(cruise.get("height") or 10668) / FT_TO_M
-                self.mmo = float(self.props.get("mmo") or 0.82)
-                self.mtow = float(self.props.get("mtow") or 79000)
-                self.mlw = float(self.props.get("mlw") or self.mtow * 0.84)
-                self.oew = float(self.props.get("oew") or self.mtow * 0.52)
-                self.mfc_l = float(self.props.get("mfc") or 20000)
+                self.mmo = float(props.get("mmo") or 0.82)
+                self.mtow = float(props.get("mtow") or 79000)
+                self.mlw = float(props.get("mlw") or self.mtow * 0.84)
+                self.oew = float(props.get("oew") or self.mtow * 0.52)
+                self.mfc_l = float(props.get("mfc") or 20000)
                 self.max_fuel_kg = self.mfc_l * 0.8025
                 self.available = True
                 self.known_type = True
-            except Exception as exc:  # pragma: no cover
-                print(f"[UYARI] OpenAP {self.ac} yüklenemedi, basit model: {exc}")
+                break
+            if not self.available:  # pragma: no cover
+                print(
+                    f"[UYARI] OpenAP {self.ac} yüklenemedi, basit model: "
+                    f"{last_error}"
+                )
 
         if not self.available:
+            # Bilinmeyen tip: B738 büyüklüğünde kaba bir yedek. Bu durumda
+            # known_type=False kalır; doğrulama karşılaştırmayı reddeder.
+            self.performance_type = "B738"
+            self.is_proxy = True
             fb = _FALLBACK.get(self.ac, _FALLBACK["B738"])
             self.nominal_mach = fb["nominal_mach"]
             self.nominal_alt_ft = fb["cruise_alt"]
@@ -206,7 +245,9 @@ class AircraftPerformance:
         if OPENAP_AVAILABLE:
             try:
                 mass = float(openap_mass.from_range(
-                    self.ac, max(distance_nm, 100), load_factor=load_factor
+                    self.performance_type or "B738",
+                    max(distance_nm, 100),
+                    load_factor=load_factor,
                 ))
             except Exception:
                 mass = self.oew + self.max_fuel_kg * 0.35 + (self.mtow - self.oew) * 0.25
@@ -533,20 +574,25 @@ class AircraftPerformance:
         track: [[timestamp, lat, lon, baro_altitude_m, heading, on_ground], ...]
         (OpenSky `/tracks/all` irtifayı metre cinsinden verir.)
 
-        İz kendi irtifa ve zaman damgalarıyla değerlendirilir; böylece
-        "bu uçak gerçekten nasıl uçtu ve ne yaktı" sorusuna model tabanlı
-        bir cevap verilir. Kütle, izin toplam mesafesinden başlatılır.
+        İz kendi irtifa ve zaman damgalarıyla değerlendirilir. Okyanus üstü
+        ADS-B boşlukları (15+ dk) zaman çizelgesinden ATILMAZ: uçak o arada
+        da uçuyordu. Böylece toplam süre duvar saatine yakın kalır ve yakıt,
+        eksik zaman dilimleri nedeniyle olduğundan az hesaplanmaz.
 
-        Not: yer hızı doğrudan izden alınır, TAS'e çevrilmez. Bu yüzden
-        kuvvetli karşı rüzgârda yakıt bir miktar düşük, kuyruk rüzgârında
-        bir miktar yüksek tahmin edilir (±%3 mertebesi).
+        Yakıt akışı için TAS, cost index'e karşılık gelen nominal hızdan
+        alınır; gözlenen yer hızı rüzgârı bilinmediği için TAS yerine
+        kullanılmaz (aksi halde 550-600 kt jet stream yer hızı, yüksek
+        hızlı cruise sanılıp yakıtı şişirir). Yer hızı yalnızca mesafe ve
+        süre hesabında kullanılır.
         """
         from utils.geo import haversine_nm
 
         pts = [
             p for p in track
-            if len(p) >= 5 and p[1] is not None and p[2] is not None and not p[5]
+            if len(p) >= 6 and p[0] is not None
+            and p[1] is not None and p[2] is not None and not p[5]
         ]
+        pts.sort(key=lambda p: float(p[0]))
         if len(pts) < 2:
             return None
 
@@ -560,20 +606,24 @@ class AircraftPerformance:
         elapsed_s = 0.0
         cruise_samples = 0
         alt_sum = 0.0
+        gap_count = 0
+        max_gap_s = 0.0
 
         for i in range(1, len(pts)):
             p0, p1 = pts[i - 1], pts[i]
-            dt_s = max(1.0, float(p1[0]) - float(p0[0]))
-            if dt_s > 900:  # veri boşluğu — fazla interpolasyon yapma
+            dt_s = float(p1[0]) - float(p0[0])
+            if dt_s <= 0 or dt_s > 3 * 3600:
+                # Negatif/zıplayan zaman damgası veya uçuşlar arası kopukluk.
                 continue
+
             dist = haversine_nm(p0[1], p0[2], p1[1], p1[2])
+            if dt_s > 900:
+                gap_count += 1
+                max_gap_s = max(max_gap_s, dt_s)
+
             alt_m = p1[3] if p1[3] is not None else p0[3]
             alt_ft = max(1000.0, float(alt_m or 9000.0) * 3.28084)
-            gs = dist / (dt_s / 3600.0) if dt_s > 0 else 0.0
-            if gs < 60:
-                continue
-            # Gerçek yer hızından TAS tahmini (rüzgâr bilinmiyor → TAS≈GS)
-            tas = max(150.0, gs)
+            tas = self.tas_for_ci(cost_index, alt_ft)
             ff = self.fuel_flow_kg_s(mass, tas, alt_ft)
             burned = ff * dt_s
             fuel += burned
@@ -596,8 +646,12 @@ class AircraftPerformance:
             "landing_mass_kg": round(mass, 0),
             "cost_index": int(cost_index),
             "source": "adsb_track_model",
+            "avg_ground_speed_kts": round(
+                total_dist / (elapsed_s / 3600.0), 0
+            ) if elapsed_s else None,
+            "gap_count": gap_count,
+            "max_gap_min": round(max_gap_s / 60.0, 0),
         }
-
 
 # ─── Cache'li erişim ────────────────────────────────────────────────
 

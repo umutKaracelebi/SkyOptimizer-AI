@@ -1,0 +1,62 @@
+{
+  "available": true,
+  "method": "Gerçek ADS-B izi aynı fizik motoruyla değerlendirildi; optimizasyon aynı uçak tipi, aynı kalkış saati rüzgârı ve aynı ağırlıklarla yeniden hesaplandı.",
+  "origin": "KJFK",
+  "destination": "EGLL",
+  "flight": {
+    "icao24": "407da5",
+    "callsign": "VIR26Q",
+    "departure": "KJFK",
+    "destination": "EGLL",
+    "aircraft_type": "A339",
+    "performance_type": "A333",
+    "performance_proxy": true,
+    "registration": "G-VJAZ",
+    "operator": "Virgin Atlantic Airways",
+    "model": "A330 941N",
+    "track_points": 171
+  },
+  "actual": {
+    "track_points": 171,
+    "distance_nm": 3075.6,
+    "fuel_kg": 23256.1,
+    "time_min": 367.8,
+    "co2_kg": 73489.2,
+    "avg_altitude_ft": 34054,
+    "landing_mass_kg": 138335,
+    "cost_index": 30,
+    "source": "adsb_track_model",
+    "gap_count": 2,
+    "max_gap_min": 176
+  },
+  "optimized": {
+    "distance_nm": 3007.8,
+    "fuel_kg": 21982.8,
+    "time_min": 353.7,
+    "co2_kg": 69465.7,
+    "cruise_altitude_ft": 34000
+  },
+  "standard": {
+    "distance_nm": 2991.3,
+    "fuel_kg": 22322.1,
+    "time_min": 355.7,
+    "co2_kg": 70538,
+    "cruise_altitude_ft": 30000
+  },
+  "comparison": {
+    "fuel_saved_vs_actual_kg": 1273.3,
+    "fuel_saved_vs_actual_percent": 5.48,
+    "time_saved_vs_actual_min": 14.1,
+    "time_saved_vs_actual_percent": 3.83,
+    "co2_saved_vs_actual_kg": 4023.6,
+    "distance_delta_vs_actual_nm": 67.8,
+    "actual_vs_shortest_extra_nm": 67.8,
+    "optimized_is_better": true
+  },
+  "reliable": true,
+  "caveats": [
+    "Yakıt, cost index nominal TAS'ıyla hesaplanır; gerçek rüzgâr bilinmediği için ±%5 sapabilir.",
+    "A339 için OpenAP'ta doğrudan model yok; A333 vekil performansı kullanıldı (±%5).",
+    "ADS-B izinde 2 boşluk var (en uzun 176 dk); bu aralıklar tipik cruise hızıyla dolduruldu."
+  ]
+}

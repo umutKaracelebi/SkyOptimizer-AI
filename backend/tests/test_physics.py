@@ -8,6 +8,7 @@ from optimization.performance import (
     AircraftPerformance,
     get_performance,
 )
+from services.validation_service import _assess_reliability
 from utils.geo import fuel_to_co2
 
 
@@ -163,6 +164,69 @@ def test_evaluate_track_uses_meter_altitudes():
     assert result["avg_altitude_ft"] == pytest.approx(32808, abs=20)
     assert result["track_points"] == 8
     assert result["fuel_kg"] > 0
+
+
+def test_unknown_openap_type_uses_labelled_proxy():
+    """A339 gibi OpenAP'ta olmayan tipler sessizce B738'e düşmemeli."""
+    perf = get_performance("A339")
+    assert perf.known_type is True
+    assert perf.is_proxy is True
+    assert perf.performance_type == "A333"
+    assert perf.initial_mass(3000) > 120_000
+    assert perf.fuel_flow_kg_s(160_000, 480, 34000) > 0.9
+
+
+def test_widebody_proxy_fuel_is_not_narrowbody_scale():
+    """A339 vekili 3.000 NM'de ~25 t yakmalı, 8-9 t değil."""
+    perf = get_performance("A339")
+    profile = perf.evaluate_route(
+        [{"distance_nm": 3000 / 14, "headwind_kts": 0.0}] * 14,
+        34000,
+        CI_DEFAULT,
+    )
+    assert 18_000 < profile["fuel_kg"] < 40_000
+    assert profile["time_min"] > 300
+
+
+def test_track_gap_counts_time_instead_of_skipping():
+    """Uzun ADS-B boşluğu süre/yakıttan düşülmemeli."""
+    perf = get_performance("B738")
+    track = [
+        [1_700_000_000, 40.0, 30.0, 10000, 90, False],
+        [1_700_000_060, 40.2, 30.2, 10000, 90, False],
+        # 30 dakikalık okyanus boşluğu
+        [1_700_001_860, 42.0, 32.0, 10000, 90, False],
+    ]
+    result = perf.evaluate_track(track)
+    assert result is not None
+    assert result["time_min"] == pytest.approx(31.0, abs=0.2)
+    assert result["gap_count"] == 1
+    assert result["max_gap_min"] == pytest.approx(30.0, abs=1)
+    assert result["fuel_kg"] > 0
+
+
+def test_validation_reliability_flags_partial_track():
+    actual = {
+        "distance_nm": 150.0,  # 3.000 NM'lik rotanın yalnızca %5'i
+        "time_min": 20.0,
+        "fuel_kg": 800.0,
+    }
+    standard = {"estimated_time_min": 360.0}
+    reliable, note = _assess_reliability(actual, standard, gc_nm=3000.0)
+    assert reliable is False
+    assert "kapsıyor" in note
+
+
+def test_validation_reliability_accepts_full_track():
+    actual = {
+        "distance_nm": 3075.0,
+        "time_min": 368.0,
+        "fuel_kg": 23_000.0,
+    }
+    standard = {"estimated_time_min": 355.0}
+    reliable, note = _assess_reliability(actual, standard, gc_nm=2990.0)
+    assert reliable is True
+    assert note is None
 
 
 def test_co2_conversion_factor():

@@ -562,6 +562,9 @@ export interface TrackEstimate {
   landing_mass_kg: number;
   cost_index: number;
   source: string;
+  avg_ground_speed_kts?: number | null;
+  gap_count?: number;
+  max_gap_min?: number;
 }
 
 export interface ValidationComparison {
@@ -587,6 +590,8 @@ export interface ValidationResult {
     departure: string | null;
     destination: string | null;
     aircraft_type: string;
+    performance_type?: string | null;
+    performance_proxy?: boolean;
     registration?: string | null;
     operator?: string | null;
     model?: string | null;
@@ -610,6 +615,8 @@ export interface ValidationResult {
     cruise_altitude_ft: number;
   };
   comparison?: ValidationComparison;
+  reliable?: boolean;
+  reliability_note?: string | null;
   wind_info?: WindInfo;
   caveats?: string[];
   error?: string;

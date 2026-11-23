@@ -14,14 +14,15 @@ karşılaştırılması gerekir. Bu modül:
      uçtu; optimizasyon ne kazandırırdı" karşılaştırmasını üretir.
 
 Dürüstlük notları:
-  • İzdeki yer hızı TAS'e çevrilmez (rüzgâr bilinmiyor) → yakıt tahmini
-    ±%3 bandında.
+  • Yakıt akışı, cost index nominal TAS'ıyla hesaplanır; gözlenen yer hızı
+    rüzgâr bilinmediği için TAS yerine kullanılmaz → yakıt tahmini ±%5.
   • Gerçek uçuş, kısıtlı hava sahası / ATC yönlendirmesi / yakıt ikmali
     gibi nedenlerle optimumdan sapabilir; bu bir model hatası değildir.
 """
 
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -30,6 +31,12 @@ from services.adsb_service import find_recent_flight, get_flight_track
 from services.aircraft_service import get_aircraft
 from services.route_planner import plan_route
 from utils.geo import haversine_nm
+
+
+# Aynı rota için tekrarlanan doğrulamalar OpenSky uçuş listesi kotasını
+# tüketmesin: başarılı sonuç 10 dakika cache'lenir.
+_VALIDATION_CACHE: dict = {}
+_CACHE_TTL_S = 600
 
 
 def _iso(ts: Optional[float]) -> Optional[str]:
@@ -61,6 +68,21 @@ async def validate_route(
           "comparison": {...}
         }
     """
+    w = weights or {}
+    cache_key = (
+        origin.upper(),
+        destination.upper(),
+        (aircraft_type or "").upper(),
+        int(round(float(cost_index))),
+        int(hours),
+        round(float(w.get("fuel", 0.0)), 3),
+        round(float(w.get("time", 0.0)), 3),
+        round(float(w.get("co2", 0.0)), 3),
+    )
+    cached = _VALIDATION_CACHE.get(cache_key)
+    if cached and time.time() - cached[0] < _CACHE_TTL_S:
+        return cached[1]
+
     found = await find_recent_flight(origin, destination, hours)
     if not found.get("available"):
         reason = found.get("reason", "Uygun uçuş bulunamadı")
@@ -69,6 +91,12 @@ async def validate_route(
                 "OpenSky geçmiş uçuşlar için kimlik doğrulama istedi. "
                 "Anonim erişim son 12 saati kapsar; daha eski uçuşlar için "
                 "credentials.json içine geçerli clientId/clientSecret ekleyin."
+            )
+        elif "429" in str(reason):
+            reason = (
+                "OpenSky anonim uçuş listesi kotası doldu (429). "
+                "Kota yenilenince veya credentials.json içine geçerli "
+                "OpenSky anahtarı eklenince tekrar deneyin."
             )
         return {
             "available": False,
@@ -98,6 +126,17 @@ async def validate_route(
     # Uçağın gerçek tipi (hexdb); yoksa kullanıcı seçimi
     actual_type = (meta or {}).get("type_code") or aircraft_type or "B738"
     perf = get_performance(actual_type)
+    if not perf.available or not perf.known_type:
+        return {
+            "available": False,
+            "reason": (
+                f"{actual_type} için performans modeli bulunamadı. "
+                "Yakıt karşılaştırması yanıltıcı olacağı için yapılmadı."
+            ),
+            "flight": flight,
+            "origin": origin.upper(),
+            "destination": destination.upper(),
+        }
 
     actual = perf.evaluate_track(track, cost_index=cost_index)
     if actual is None:
@@ -130,8 +169,28 @@ async def validate_route(
     standard = planned["standard_route"]
 
     comparison = _compare(actual, optimized, standard)
+    reliable, reliability_note = _assess_reliability(
+        actual, standard, great_circle_distance(origin, destination)
+    )
 
-    return {
+    caveats = [
+        "Yakıt, cost index nominal TAS'ıyla hesaplanır; gerçek rüzgâr bilinmediği için ±%5 sapabilir.",
+        "Gerçek uçuş ATC yönlendirmesi, kısıtlı saha veya yakıt ikmali nedeniyle optimumdan sapabilir.",
+        "Gerçek uçuşun kalkış ağırlığı bilinmez; rota mesafesinden tahmin edilir.",
+    ]
+    if perf.is_proxy:
+        caveats.append(
+            f"{actual_type} için OpenAP'ta doğrudan model yok; "
+            f"{perf.performance_type} vekil performansı kullanıldı (±%5)."
+        )
+    if actual.get("gap_count"):
+        caveats.append(
+            f"ADS-B izinde {actual['gap_count']} boşluk var (en uzun "
+            f"{actual.get('max_gap_min', 0):.0f} dk); bu aralıklar tipik cruise "
+            "hızıyla dolduruldu."
+        )
+
+    result = {
         "available": True,
         "method": (
             "Gerçek ADS-B izi aynı fizik motoruyla değerlendirildi; "
@@ -143,6 +202,8 @@ async def validate_route(
         "flight": {
             **flight,
             "aircraft_type": actual_type,
+            "performance_type": perf.performance_type,
+            "performance_proxy": perf.is_proxy,
             "registration": (meta or {}).get("registration"),
             "operator": (meta or {}).get("operator"),
             "model": (meta or {}).get("model"),
@@ -166,14 +227,14 @@ async def validate_route(
             "cruise_altitude_ft": standard["cruise_altitude_ft"],
         },
         "comparison": comparison,
+        "reliable": reliable,
+        "reliability_note": reliability_note,
         "wind_info": planned.get("wind_info"),
         "departure_time": planned.get("departure_time"),
-        "caveats": [
-            "İz yer hızı TAS kabul edilir; rüzgâr nedeniyle yakıt tahmini ±%3 sapabilir.",
-            "Gerçek uçuş ATC yönlendirmesi, kısıtlı saha veya yakıt ikmali nedeniyle optimumdan sapabilir.",
-            "Gerçek uçuşun kalkış ağırlığı bilinmez; rota mesafesinden tahmin edilir.",
-        ],
+        "caveats": caveats,
     }
+    _VALIDATION_CACHE[cache_key] = (time.time(), result)
+    return result
 
 
 async def _track_and_meta(icao24: Optional[str], callsign: Optional[str], last_seen):
@@ -192,6 +253,53 @@ async def _track_and_meta(icao24: Optional[str], callsign: Optional[str], last_s
     if isinstance(meta, Exception):
         meta = None
     return track_result, meta
+
+
+def _assess_reliability(
+    actual: dict, standard: dict, gc_nm: Optional[float]
+) -> tuple:
+    """
+    İz ve karşılaştırmanın güvenilirliğini denetle.
+
+    Eksik ADS-B kapsaması, kopuk zaman damgaları veya fiziksel olarak
+    imkânsız yakıt akışı varsa tasarruf iddiası gösterilmemelidir.
+    """
+    issues = []
+    actual_dist = actual.get("distance_nm") or 0.0
+    actual_time = actual.get("time_min") or 0.0
+    std_time = standard.get("estimated_time_min") or 0.0
+    fuel = actual.get("fuel_kg") or 0.0
+
+    if gc_nm and actual_dist < gc_nm * 0.85:
+        issues.append(
+            f"iz rotanın yalnızca %{actual_dist / gc_nm * 100:.0f}'ini kapsıyor"
+        )
+    elif gc_nm and actual_dist > gc_nm * 1.6:
+        issues.append(
+            f"iz mesafesi rotanın %{actual_dist / gc_nm * 100:.0f}'i (veri sıçraması)"
+        )
+
+    if std_time and actual_time:
+        ratio = actual_time / std_time
+        if ratio < 0.6:
+            issues.append(
+                f"iz süresi beklenenin %{ratio * 100:.0f}'i (zaman damgası boşluğu)"
+            )
+        elif ratio > 2.0:
+            issues.append(
+                f"iz süresi beklenenin %{ratio * 100:.0f}'i (bekleme/kesinti olabilir)"
+            )
+
+    if actual_time > 0:
+        fuel_per_hour = fuel / (actual_time / 60.0)
+        if fuel_per_hour < 100 or fuel_per_hour > 15000:
+            issues.append(
+                f"saatlik yakıt {fuel_per_hour:.0f} kg/h (fiziksel olarak tutarsız)"
+            )
+
+    if issues:
+        return False, "; ".join(issues) + ". Yakıt karşılaştırması güvenilir değil."
+    return True, None
 
 
 def _compare(actual: dict, optimized: dict, standard: dict) -> dict:
