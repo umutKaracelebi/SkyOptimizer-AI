@@ -50,7 +50,10 @@ else:
 
 # ─── API Endpoints ──────────────────────────────────────────────────
 OPENSKY_BASE_URL = "https://opensky-network.org/api"
-OPENSKY_TOKEN_URL = "https://opensky-network.org/api/oauth/token"
+OPENSKY_TOKEN_URL = (
+    "https://auth.opensky-network.org/auth/realms/opensky-network/"
+    "protocol/openid-connect/token"
+)
 AVIATION_WEATHER_BASE_URL = "https://aviationweather.gov/api/data"
 OPENWEATHER_BASE_URL = "https://api.openweathermap.org/data/2.5"
 NOAA_GFS_BASE_URL = "https://nomads.ncep.noaa.gov"
