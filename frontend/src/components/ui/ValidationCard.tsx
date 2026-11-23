@@ -20,6 +20,8 @@ export default function ValidationCard({
   error: string;
   onRun: () => void;
 }) {
+  const noisePercent = result?.flight?.performance_proxy ? 8 : 1.5;
+
   return (
     <div className="glass-card rounded-xl p-4">
       <div className="flex items-center justify-between mb-2">
@@ -105,21 +107,34 @@ export default function ValidationCard({
                 <MiniStat label="GERÇEK" value={result.actual.fuel_kg} unit="kg" color="text-amber-400" />
                 <MiniStat label="OPTİMİZE" value={result.optimized?.fuel_kg ?? 0} unit="kg" color="text-emerald-400" />
                 <MiniStat
-                  label={result.comparison.fuel_saved_vs_actual_kg >= 0 ? 'FARK' : 'FARK (AŞIM)'}
+                  label={
+                    Math.abs(result.comparison.fuel_saved_vs_actual_percent) < noisePercent
+                      ? 'FARK (BELİRSİZ)'
+                      : result.comparison.fuel_saved_vs_actual_kg >= 0
+                        ? 'FARK'
+                        : 'FARK (AŞIM)'
+                  }
                   value={Math.abs(result.comparison.fuel_saved_vs_actual_kg)}
                   unit="kg"
-                  color={result.comparison.fuel_saved_vs_actual_kg >= 0 ? 'text-cyan-400' : 'text-red-400'}
+                  color={
+                    Math.abs(result.comparison.fuel_saved_vs_actual_percent) < noisePercent
+                      ? 'text-gray-400'
+                      : result.comparison.fuel_saved_vs_actual_kg >= 0
+                        ? 'text-cyan-400'
+                        : 'text-red-400'
+                  }
                 />
               </div>
 
               <div className="flex items-start gap-1.5 text-[9px] leading-snug">
-                {Math.abs(result.comparison.fuel_saved_vs_actual_percent) < 1.5 ? (
+                {Math.abs(result.comparison.fuel_saved_vs_actual_percent) < noisePercent ? (
                   <>
                     <AlertTriangle size={11} className="text-gray-400 shrink-0 mt-0.5" />
                     <span className="text-gray-400">
                       Fark (%{Math.abs(result.comparison.fuel_saved_vs_actual_percent).toFixed(1)})
-                      modelin ±%5 belirsizliği içinde; bu uçuş için pratikte eşdeğer.
-                      Yine de gerçek iz, modelin aynı fizikle değerlendirildiğini gösterir.
+                      modelin ±%{noisePercent} belirsizliği içinde; bu uçuş için
+                      pratikte eşdeğer. Gerçek iz yine de modelin aynı fizikle
+                      değerlendirildiğini gösterir.
                     </span>
                   </>
                 ) : result.comparison.optimized_is_better ? (

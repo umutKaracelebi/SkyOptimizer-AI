@@ -168,7 +168,7 @@ test("güvenilmez iz karşılaştırma iddiası üretmez", async ({ page }) => {
 });
 
 
-test("vekil performans tipi ve pozitif tasarruf gösterilir", async ({ page }) => {
+test("vekil performans tipi ve belirsizlik bandı gösterilir", async ({ page }) => {
   await mockApi(page);
   await page.route("**/api/validate", (route) =>
     route.fulfill({
@@ -185,8 +185,9 @@ test("vekil performans tipi ve pozitif tasarruf gösterilir", async ({ page }) =
 
   await expect(page.getByText("VIR26Q")).toBeVisible();
   await expect(page.getByText("A339 → A333 vekil")).toBeVisible();
-  await expect(page.getByText(/Gerçek uçuşa göre %5.5 yakıt/)).toBeVisible();
-  await expect(page.getByText("FARK")).toBeVisible();
+  await expect(page.getByText(/Fark \(%5.5\)/)).toBeVisible();
+  await expect(page.getByText(/±%8 belirsizliği içinde/)).toBeVisible();
+  await expect(page.getByText("FARK (BELİRSİZ)", { exact: true })).toBeVisible();
   await page.getByText("Varsayımlar ▾").click();
   await expect(page.getByText(/A333 vekil performansı/)).toBeVisible();
 });

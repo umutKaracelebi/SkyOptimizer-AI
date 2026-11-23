@@ -181,7 +181,9 @@ async def validate_route(
     if perf.is_proxy:
         caveats.append(
             f"{actual_type} için OpenAP'ta doğrudan model yok; "
-            f"{perf.performance_type} vekil performansı kullanıldı (±%5)."
+            f"{perf.performance_type} vekil performansı kullanıldı. "
+            "Vekil tip mutlak yakıtta ±%15 sapabilir; asıl anlamlı olan "
+            "iki rotanın aynı modeldeki nispi farkıdır."
         )
     if actual.get("gap_count"):
         caveats.append(

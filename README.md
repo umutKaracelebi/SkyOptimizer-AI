@@ -377,8 +377,10 @@ bilinmediği için ~±%5 belirsizlik vardır. Uzun ADS-B boşlukları süreye da
 edilir, mesafe/süre tutarsızlığında karşılaştırma reddedilir.
 - **OpenAP kapsamı**: A339, A35K, B78X, B779 gibi tipler OpenAP 2.4'te yoktur;
 en yakın gövde ailesi (A333, A359, B789, B77W) vekil olarak kullanılır ve hem
-API'de hem arayüzde açıkça belirtilir. Bilinmeyen tip sessizce B738'e düşmez —
-`known_type: false` döner ve doğrulama karşılaştırmayı reddeder.
+API'de hem arayüzde açıkça belirtilir. Vekil tip mutlak yakıtta ±%15 sapabilir;
+bu yüzden vekil uçuşlarda %8'in altındaki farklar "eşdeğer" sayılır. Bilinmeyen
+tip sessizce B738'e düşmez — `known_type: false` döner ve doğrulama
+karşılaştırmayı reddeder.
 - **ATC / hava yolu yapısı**: model serbest koridor varsayar; gerçek seyir yolları,
 SID/STAR ve slot kısıtları kapsam dışıdır. Doğrulama sonucu bu yüzden gerçek
 uçuştan kötü çıkabilir ve bu durum arayüzde dürüstçe belirtilir.

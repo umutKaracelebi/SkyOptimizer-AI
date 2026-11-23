@@ -56,7 +56,7 @@
   "reliable": true,
   "caveats": [
     "Yakıt, cost index nominal TAS'ıyla hesaplanır; gerçek rüzgâr bilinmediği için ±%5 sapabilir.",
-    "A339 için OpenAP'ta doğrudan model yok; A333 vekil performansı kullanıldı (±%5).",
+    "A339 için OpenAP'ta doğrudan model yok; A333 vekil performansı kullanıldı. Vekil tip mutlak yakıtta ±%15 sapabilir; asıl anlamlı olan iki rotanın aynı modeldeki nispi farkıdır.",
     "ADS-B izinde 2 boşluk var (en uzun 176 dk); bu aralıklar tipik cruise hızıyla dolduruldu."
   ]
 }
