@@ -446,6 +446,15 @@ export default function OptimizerPage() {
                   />
                 </div>
               ))}
+              {/*
+                Dürüstlük notu: bu fizik modelinde CO₂ = 3.16 × yakıt ve yakıt
+                süreyle neredeyse orantılıdır; üç kriter aynı hedefi ölçer.
+                Ağırlıklar yol seçimini yalnızca marjinal etkiler.
+              */}
+              <p className="mt-2 pt-2 border-t border-gray-800 text-[9px] leading-snug text-gray-600">
+                Bu modelde CO₂ = 3.16 × yakıt ve yakıt süreyle orantılıdır; üç
+                ağırlık aynı hedefi ölçer, rota seçimini yalnızca marjinal etkiler.
+              </p>
             </div>
 
             {/* -- Canlı Trafik Toggle -- */}
