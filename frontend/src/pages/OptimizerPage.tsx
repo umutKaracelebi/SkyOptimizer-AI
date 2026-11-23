@@ -570,9 +570,21 @@ export default function OptimizerPage() {
             worldCopyJump={true}
           >
             <MapUpdater center={mapCenter} zoom={mapZoom} bounds={mapBounds} />
+            {/*
+              Harita karoları: Esri World Dark Gray (anahtarsız).
+              NOT: Önceden CARTO dark_all kullanılıyordu; CARTO artık karo
+              sunucusunda API anahtarı istiyor ve harita "API KEY REQUIRED"
+              filigranıyla doluyordu. Esri bu katmanı anahtarsız sunuyor.
+            */}
             <TileLayer
-              url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-              attribution='&copy; <a href="https://carto.com/">CARTO</a>'
+              url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+              attribution='Esri, HERE, Garmin, &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> katkıcıları'
+              maxZoom={16}
+            />
+            {/* Yer etiketleri (şehir/ülke adları) ayrı şeffaf katman */}
+            <TileLayer
+              url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}"
+              maxZoom={16}
             />
 
             {/* Optimize rota — cyan parlak çizgi (önce çizilir, altta kalır) */}

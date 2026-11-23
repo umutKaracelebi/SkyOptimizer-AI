@@ -282,7 +282,7 @@ deneyap-takimlasma-proje/
 |--------|-----------|
 | Backend | Python, FastAPI, uvicorn |
 | Frontend | React 18, TypeScript, Vite, Tailwind CSS 3 |
-| Harita | Leaflet, react-leaflet, CARTO dark tiles |
+| Harita | Leaflet, react-leaflet, Esri World Dark Gray (anahtarsız) |
 | Optimizasyon | NetworkX, A* pathfinding, OpenAP |
 | Yapay Zekâ | PyTorch, CUDA, scikit-learn |
 | Veri Kaynakları | OpenSky Network, AviationWeather.gov, Open-Meteo (GFS), OpenWeatherMap (yedek), OurAirports |
