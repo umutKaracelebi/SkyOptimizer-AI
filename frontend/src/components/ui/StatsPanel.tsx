@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
-import { TrendingUp, Fuel, Clock, Leaf, DollarSign, BarChart3 } from 'lucide-react';
+import { TrendingUp, Fuel, Clock, Leaf, DollarSign, BarChart3, Server, HardDrive } from 'lucide-react';
+import { getSavingsStats } from '../../services/api';
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -16,20 +17,28 @@ interface CumulativeStats {
   total_time_min: number;
   total_co2_kg: number;
   total_cost_usd: number;
+  distinct_routes: number;
 }
 
 const STORAGE_KEY = 'skyoptimizer_stats';
+const EMPTY: CumulativeStats = {
+  total_optimizations: 0, total_fuel_kg: 0, total_time_min: 0,
+  total_co2_kg: 0, total_cost_usd: 0, distinct_routes: 0,
+};
 
-function loadStats(): CumulativeStats {
+function loadLocalStats(): CumulativeStats {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        ...EMPTY,
+        ...parsed,
+        distinct_routes: parsed.distinct_routes ?? 0,
+      };
+    }
   } catch { /* ignore */ }
-  return { total_optimizations: 0, total_fuel_kg: 0, total_time_min: 0, total_co2_kg: 0, total_cost_usd: 0 };
-}
-
-function saveStats(stats: CumulativeStats) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(stats));
+  return { ...EMPTY };
 }
 
 // ─── Animated Counter ───────────────────────────────────────────────
@@ -51,17 +60,12 @@ function AnimatedCounter({ value, decimals = 0, duration = 1200 }: { value: numb
     const tick = (now: number) => {
       const elapsed = now - startTime;
       const progress = Math.min(elapsed / duration, 1);
-      // ease-out cubic
       const eased = 1 - Math.pow(1 - progress, 3);
       setDisplay(start + diff * eased);
       if (progress < 1) { raf = requestAnimationFrame(tick); }
     };
 
     raf = requestAnimationFrame(tick);
-
-    // requestAnimationFrame her ortamda çalışmaz (arka plan sekmesi, bazı
-    // webview'ler). Bu durumda sayaç 0'da kalıp yanlış değer gösteriyordu —
-    // süre sonunda hedef değeri zorla yaz.
     const fallback = setTimeout(() => setDisplay(value), duration + 250);
 
     return () => {
@@ -77,65 +81,73 @@ function AnimatedCounter({ value, decimals = 0, duration = 1200 }: { value: numb
 
 interface StatsPanelProps {
   latestSavings: SavingsData | null;
+  /** Yeni bir optimizasyon tamamlandığında artırılır → sunucudan tazelenir */
+  refreshKey?: number;
 }
 
-export default function StatsPanel({ latestSavings }: StatsPanelProps) {
-  const [stats, setStats] = useState<CumulativeStats>(loadStats);
+/**
+ * Birikimli tasarruf paneli.
+ *
+ * Öncelik sunucudaki SQLite toplamlarıdır (ekip ortak istatistiği);
+ * sunucuya erişilemezse tarayıcıdaki yerel toplam gösterilir.
+ */
+export default function StatsPanel({ latestSavings, refreshKey = 0 }: StatsPanelProps) {
+  const [stats, setStats] = useState<CumulativeStats>(loadLocalStats);
+  const [source, setSource] = useState<'server' | 'local'>('local');
+  const [serverError, setServerError] = useState('');
   const lastSavingsRef = useRef<SavingsData | null>(null);
 
-  // Yeni tasarruf geldiğinde birikime ekle
+  // Sunucu toplamlarını tazele
   useEffect(() => {
-    if (!latestSavings) return;
-    // Aynı savings'i tekrar eklememek için referans kontrolü
+    let cancelled = false;
+    getSavingsStats()
+      .then(data => {
+        if (cancelled) return;
+        setStats({
+          total_optimizations: data.totals.total_optimizations,
+          total_fuel_kg: data.totals.total_fuel_kg,
+          total_time_min: data.totals.total_time_min,
+          total_co2_kg: data.totals.total_co2_kg,
+          total_cost_usd: data.totals.total_cost_usd,
+          distinct_routes: data.totals.distinct_routes,
+        });
+        setSource('server');
+        setServerError('');
+      })
+      .catch(err => {
+        if (!cancelled) {
+          setServerError(String(err));
+          setSource('local');
+        }
+      });
+    return () => { cancelled = true; };
+  }, [refreshKey]);
+
+  // Sunucu yoksa yeni tasarrufu yerel birikime ekle
+  useEffect(() => {
+    if (!latestSavings || source === 'server') return;
     if (lastSavingsRef.current === latestSavings) return;
     lastSavingsRef.current = latestSavings;
 
     setStats(prev => {
       const updated: CumulativeStats = {
+        ...prev,
         total_optimizations: prev.total_optimizations + 1,
         total_fuel_kg: prev.total_fuel_kg + (latestSavings.fuel_saved_kg || 0),
         total_time_min: prev.total_time_min + (latestSavings.time_saved_min || 0),
         total_co2_kg: prev.total_co2_kg + (latestSavings.co2_saved_kg || 0),
         total_cost_usd: prev.total_cost_usd + (latestSavings.cost_saved_usd || 0),
       };
-      saveStats(updated);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
       return updated;
     });
-  }, [latestSavings]);
+  }, [latestSavings, source]);
 
   const statItems = [
-    {
-      icon: <Fuel size={14} />,
-      label: 'TOPLAM YAKIT',
-      value: stats.total_fuel_kg,
-      unit: 'kg',
-      color: 'emerald',
-      decimals: 1,
-    },
-    {
-      icon: <Clock size={14} />,
-      label: 'TOPLAM SÜRE',
-      value: stats.total_time_min,
-      unit: 'dk',
-      color: 'blue',
-      decimals: 1,
-    },
-    {
-      icon: <Leaf size={14} />,
-      label: 'TOPLAM CO₂',
-      value: stats.total_co2_kg,
-      unit: 'kg',
-      color: 'amber',
-      decimals: 1,
-    },
-    {
-      icon: <DollarSign size={14} />,
-      label: 'TOPLAM MALİYET',
-      value: stats.total_cost_usd,
-      unit: '$',
-      color: 'purple',
-      decimals: 0,
-    },
+    { icon: <Fuel size={14} />, label: 'TOPLAM YAKIT', value: stats.total_fuel_kg, unit: 'kg', color: 'emerald', decimals: 0 },
+    { icon: <Clock size={14} />, label: 'TOPLAM SÜRE', value: stats.total_time_min, unit: 'dk', color: 'blue', decimals: 0 },
+    { icon: <Leaf size={14} />, label: 'TOPLAM CO₂', value: stats.total_co2_kg, unit: 'kg', color: 'amber', decimals: 0 },
+    { icon: <DollarSign size={14} />, label: 'TOPLAM MALİYET', value: stats.total_cost_usd, unit: '$', color: 'purple', decimals: 0 },
   ];
 
   const colorMap: Record<string, { bg: string; border: string; text: string }> = {
@@ -174,6 +186,23 @@ export default function StatsPanel({ latestSavings }: StatsPanelProps) {
           );
         })}
       </div>
+
+      <div className="mt-2 pt-2 border-t border-gray-800 flex items-center justify-between text-[8px] text-gray-500">
+        <span className="flex items-center gap-1">
+          {source === 'server'
+            ? <><Server size={9} className="text-emerald-500/70" /> EKİP ORTAK (SQLite)</>
+            : <><HardDrive size={9} className="text-amber-500/70" /> YEREL TARAYICI</>}
+        </span>
+        <span>
+          {(stats.total_co2_kg / 1000).toFixed(2)} ton CO₂
+          {stats.distinct_routes > 0 && ` · ${stats.distinct_routes} rota`}
+        </span>
+      </div>
+      {serverError && source === 'local' && (
+        <p className="mt-1 text-[8px] text-amber-500/60 leading-snug">
+          Sunucu istatistiğine ulaşılamadı; yerel toplam gösteriliyor.
+        </p>
+      )}
     </div>
   );
 }

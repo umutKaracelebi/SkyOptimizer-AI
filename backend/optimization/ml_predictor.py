@@ -5,11 +5,12 @@ Eğitilmiş PyTorch modelini yükler ve FastAPI'de kullanılabilir hale getirir.
 
 import os
 import pickle
+
 import numpy as np
 
-import torch
-import torch.nn as nn
-
+# NOT: torch bilinçli olarak tembel import edilir. Sunucu torch olmadan da
+# (ör. hafif CI ortamı) çalışır; AI tahmini devre dışı kalır ve fizik
+# modeli kullanılır. `model.pt` varsa ve torch kuruluysa otomatik yüklenir.
 
 # ─── Sabitler ─────────────────────────────────────────────────────
 ML_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ml")
@@ -17,31 +18,36 @@ MODEL_FILE = os.path.join(ML_DIR, "model.pt")
 SCALER_FILE = os.path.join(ML_DIR, "scaler.pkl")
 
 
-# ─── Model tanımı (train_model.py ile aynı) ─────────────────────
-class FlightCostPredictor(nn.Module):
-    def __init__(self, input_dim: int = 7, output_dim: int = 3):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(input_dim, 512),
-            nn.LeakyReLU(0.01),
-            nn.BatchNorm1d(512),
+def _build_model(input_dim: int = 7, output_dim: int = 3):
+    """Model tanımı (train_model.py ile aynı) — torch yüklüyken kurulur."""
+    import torch.nn as nn
 
-            nn.Linear(512, 256),
-            nn.LeakyReLU(0.01),
-            nn.BatchNorm1d(256),
+    class FlightCostPredictor(nn.Module):
+        def __init__(self, in_dim: int, out_dim: int):
+            super().__init__()
+            self.net = nn.Sequential(
+                nn.Linear(in_dim, 512),
+                nn.LeakyReLU(0.01),
+                nn.BatchNorm1d(512),
 
-            nn.Linear(256, 128),
-            nn.LeakyReLU(0.01),
-            nn.BatchNorm1d(128),
+                nn.Linear(512, 256),
+                nn.LeakyReLU(0.01),
+                nn.BatchNorm1d(256),
 
-            nn.Linear(128, 64),
-            nn.LeakyReLU(0.01),
+                nn.Linear(256, 128),
+                nn.LeakyReLU(0.01),
+                nn.BatchNorm1d(128),
 
-            nn.Linear(64, output_dim),
-        )
+                nn.Linear(128, 64),
+                nn.LeakyReLU(0.01),
 
-    def forward(self, x):
-        return self.net(x)
+                nn.Linear(64, out_dim),
+            )
+
+        def forward(self, x):
+            return self.net(x)
+
+    return FlightCostPredictor(input_dim, output_dim)
 
 
 # ─── Singleton Model Yükleyici ───────────────────────────────────
@@ -66,12 +72,22 @@ class MLPredictor:
             self.available = False
             return
 
+        try:
+            import torch
+        except ImportError:
+            print("[ML] torch kurulu değil, AI tahminleri devre dışı.")
+            self._loaded = False
+            self.available = False
+            return
+
+        self._loaded = True  # yeniden denemeyi engelle
         # Checkpoint yükle
         checkpoint = torch.load(MODEL_FILE, map_location="cpu", weights_only=True)
         input_dim = checkpoint.get("input_dim", 7)
         output_dim = checkpoint.get("output_dim", 3)
 
-        self.model = FlightCostPredictor(input_dim, output_dim)
+        self.torch = torch
+        self.model = _build_model(input_dim, output_dim)
         self.model.load_state_dict(checkpoint["model_state"])
         self.model.eval()
 
@@ -125,6 +141,7 @@ class MLPredictor:
         # Normalize
         features_scaled = self.scaler_X.transform(features)
 
+        torch = self.torch
         with torch.no_grad():
             x = torch.tensor(features_scaled, dtype=torch.float32).to(self.device)
             pred_scaled = self.model(x).cpu().numpy()

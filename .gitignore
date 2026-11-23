@@ -38,3 +38,12 @@ htmlcov/
 
 # ─── Runtime cache ──────────────────────────────────────────────────
 backend/data/cache/
+
+# ─── SQLite birikim verisi ──────────────────────────────────────────
+backend/data/savings.db
+backend/data/savings.db-journal
+
+# ─── Playwright ─────────────────────────────────────────────────────
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/

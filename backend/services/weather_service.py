@@ -13,6 +13,23 @@ from config import (
 from services.cache_manager import cache
 
 
+def _parse_visibility_sm(value) -> float | None:
+    """METAR görüş değerini statute mile'a çevir ("6+", "10", "1/2")."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    text = text.replace("+", "")
+    try:
+        if "/" in text:
+            numerator, denominator = text.split("/", 1)
+            return round(float(numerator) / float(denominator), 2)
+        return float(text)
+    except (ValueError, ZeroDivisionError):
+        return None
+
+
 async def get_metar(icao: str) -> dict:
     """
     Havalimanı METAR (anlık gözlem) verisi.
@@ -35,6 +52,10 @@ async def get_metar(icao: str) -> dict:
             data = response.json()
             if isinstance(data, list) and len(data) > 0:
                 metar = data[0]
+                # Görüş: ABD METAR'larında "6+" gibi statute mile string'i
+                # dönebilir; metreye çevrilir ama ham değer de saklanır.
+                visibility_raw = metar.get("visib")
+                visibility_sm = _parse_visibility_sm(visibility_raw)
                 result = {
                     "icao": icao,
                     "raw": metar.get("rawOb", ""),
@@ -43,9 +64,19 @@ async def get_metar(icao: str) -> dict:
                     "wind_direction": metar.get("wdir"),
                     "wind_speed_kts": metar.get("wspd"),
                     "wind_gust_kts": metar.get("wgst"),
-                    "visibility_m": metar.get("visib"),
+                    "visibility_raw": visibility_raw,
+                    "visibility_sm": visibility_sm,
+                    "visibility_m": (
+                        round(visibility_sm * 1609.34, 0)
+                        if visibility_sm is not None else None
+                    ),
                     "altimeter_hpa": metar.get("altim"),
-                    "flight_category": metar.get("fltcat"),  # VFR/IFR/MVFR/LIFR
+                    # aviationweather.gov "fltCat" döndürür; eski anahtar da
+                    # desteklenir.
+                    "flight_category": (
+                        metar.get("fltCat") or metar.get("fltcat")
+                    ),
+                    "weather": metar.get("wxString"),
                     "cloud_layers": metar.get("clouds", []),
                     "observation_time": metar.get("reportTime"),
                 }

@@ -295,3 +295,50 @@ input[type="range"]::-moz-range-thumb {
   font-variant-numeric: tabular-nums;
 }
 
+
+/* ─── Uçak ikonları (canlı trafik) ───────────────────────────── */
+
+.aircraft-marker {
+  background: transparent;
+  border: none;
+}
+
+.aircraft-marker-inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: 50% 50%;
+  transition: transform 0.4s ease;
+}
+
+.aircraft-marker:hover .aircraft-marker-inner {
+  filter: brightness(1.35) drop-shadow(0 0 6px rgba(0, 212, 255, 0.9));
+}
+
+/* ─── Detay paneli giriş animasyonu ──────────────────────────── */
+
+@keyframes panel-in {
+  from { opacity: 0; transform: translateX(24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.animate-in {
+  animation: panel-in 0.22s ease-out;
+}
+
+/* ─── Yazdırma (PDF rapor) ───────────────────────────────────── */
+
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+  html, body {
+    background: #ffffff !important;
+    color: #111111 !important;
+  }
+  .glass-card {
+    box-shadow: none !important;
+    border-color: #d1d5db !important;
+  }
+}

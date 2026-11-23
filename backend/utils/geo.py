@@ -51,11 +51,14 @@ def initial_bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> float
     """
     İki nokta arası başlangıç yönünü (bearing) derece cinsinden hesaplar.
     0° = Kuzey, 90° = Doğu, 180° = Güney, 270° = Batı
+
+    Boylam farkı [-180, 180] aralığına indirgenir; aksi hâlde tarih
+    çizgisini (±180°) geçen rotalarda yön 2° yerine ~358° çıkıyordu.
     """
     lat1_r, lon1_r = math.radians(lat1), math.radians(lon1)
     lat2_r, lon2_r = math.radians(lat2), math.radians(lon2)
 
-    dlon = lon2_r - lon1_r
+    dlon = math.radians(((lon2 - lon1 + 180) % 360) - 180)
 
     x = math.sin(dlon) * math.cos(lat2_r)
     y = (math.cos(lat1_r) * math.sin(lat2_r) -

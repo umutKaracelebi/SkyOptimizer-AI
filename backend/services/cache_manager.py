@@ -88,6 +88,8 @@ class CacheManager:
             "weather": TTLCache(maxsize=200, ttl=WEATHER_CACHE_TTL),
             "wind": TTLCache(maxsize=600, ttl=WIND_CACHE_TTL),
             "airport": TTLCache(maxsize=1000, ttl=AIRPORT_CACHE_TTL),
+            # Uçak kimliği (hexdb) ve rota bilgisi: 24 saat
+            "aircraft": TTLCache(maxsize=4000, ttl=86400),
         }
         self._hit_count = 0
         self._miss_count = 0
