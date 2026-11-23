@@ -1,4 +1,4 @@
-# Python
+# ─── Python ─────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
@@ -9,39 +9,32 @@ build/
 venv/
 .env
 
-# Node
+# ─── Node ───────────────────────────────────────────────────────────
 node_modules/
 frontend/node_modules/
 frontend/dist/
 
-# IDE
+# ─── IDE / OS ───────────────────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
 *.swo
-
-# OS
 .DS_Store
 Thumbs.db
 
-# Secrets
+# ─── Sırlar (ASLA commit edilmemeli) ────────────────────────────────
+# Gerçek API anahtarları burada durur; depoyu klonlayan kişi kendi
+# anahtarını oluşturur. README'deki şablonlar kullanılır.
 credentials.json
 openweatherapi.txt
+.env
+.env.local
 
-# ML Models (büyük dosyalar)
-ml/models/*.pkl
-ml/data/*.csv
-
-# Eğitim verisi — ml/data_collector.py ile yeniden üretilebilir (~14 MB)
-backend/ml/flight_data.csv
-
-# Test / araç artefaktları
+# ─── Test / araç artefaktları ───────────────────────────────────────
 .pytest_cache/
+.coverage
+htmlcov/
 *.tsbuildinfo
 
-# Cache
+# ─── Runtime cache ──────────────────────────────────────────────────
 backend/data/cache/
-
-# System Prompt
-SYSTEM_PROMPT.md
-
