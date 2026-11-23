@@ -45,10 +45,6 @@ export function DottedSurface({ className, gravityX = 0.5, gravityY = 0.55, ...p
 
     container.appendChild(renderer.domElement);
 
-    // Grid merkezi
-    const gridCenterX = 0;
-    const gridCenterZ = 0;
-
     // Yerçekimi kuyusu — dünyanın olduğu yere denk gelen 3D koordinat
     // gravityX/Y ekran koordinatları → 3D grid koordinatlarına dönüştürülüyor
     const gravityWorldX = (gravityX - 0.5) * AMOUNTX * SEPARATION;
@@ -124,7 +120,7 @@ export function DottedSurface({ className, gravityX = 0.5, gravityY = 0.55, ...p
     scene.add(points);
 
     let count = 0;
-    let animationId: number;
+    let animationId = 0;
 
     const animate = () => {
       animationId = requestAnimationFrame(animate);

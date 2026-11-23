@@ -228,7 +228,7 @@ export default function HeroGlobe() {
               <div className="flex items-center gap-2 mt-6 lg:mt-8 opacity-30">
                 <span className="text-cyan-500 text-[9px] font-mono">◈</span>
                 <div className="flex-1 h-px bg-cyan-500/30"></div>
-                <span className="text-cyan-500 text-[9px] font-mono">ADS-B • METAR • GFS • A* • ML</span>
+                <span className="text-cyan-500 text-[9px] font-mono">ADS-B • METAR • GFS • A* • DNN</span>
               </div>
             </div>
           </div>
@@ -268,7 +268,7 @@ export default function HeroGlobe() {
               { value: '915M', label: 'Yıllık CO₂ Emisyonu', desc: 'Küresel havacılık sektörü' },
               { value: '$180B', label: 'Yıllık Yakıt Maliyeti', desc: 'Tüm havayolları toplam' },
               { value: '4.5B', label: 'Yolcu / Yıl', desc: 'Küresel hava trafiği' },
-              { value: '%2-5', label: 'Tasarruf Potansiyeli', desc: 'Rüzgâr optimizasyonu ile' },
+              { value: '%1-4', label: 'Ölçülen Tasarruf', desc: 'Rota bazlı, aynı rüzgârla' },
             ].map((s, i) => (
               <FadeInUp key={i} delay={0.15 * i}>
                 <div className="glass-card rounded-xl p-5 lg:p-6 group hover:border-cyan-500/30 hover:shadow-[0_0_15px_rgba(0,212,255,0.05)] transition-all duration-500">
@@ -451,11 +451,11 @@ export default function HeroGlobe() {
                 {[
                   ['Takım', 'İnoTürk'],
                   ['Program', 'Deneyap Takımlaşma Projesi 2026'],
-                  ['Kapsam', 'Global — 5.200+ Havalimanı'],
-                  ['Veri', 'OpenSky, NOAA, OWM, OurAirports'],
+                  ['Kapsam', 'Global — 5.278 Havalimanı'],
+                  ['Veri', 'OpenSky, Open-Meteo (GFS), OurAirports'],
                   ['Backend', 'Python FastAPI + NetworkX'],
                   ['Frontend', 'React + TypeScript + Leaflet'],
-                  ['ML/AI', 'A* + Gradient Boosting (178K param)'],
+                  ['ML/AI', 'A* + PyTorch DNN (178.563 param)'],
                 ].map(([k, v], i) => (
                   <div key={i} className={`flex justify-between text-gray-400 ${i < 6 ? 'border-b border-gray-800 pb-2' : ''}`}>
                     <span>{k}</span>
@@ -490,7 +490,7 @@ export default function HeroGlobe() {
               <span className="w-1 h-1 bg-green-500 rounded-full"></span>
               AKTİF
             </span>
-            <span>OPENSKY • NOAA • OWM</span>
+            <span>OPENSKY • OPEN-METEO GFS • OURAIRPORTS</span>
           </div>
           <div className="text-[8px] lg:text-[9px] font-mono text-cyan-500/50">
             İnoTürk — DENEYAP 2026

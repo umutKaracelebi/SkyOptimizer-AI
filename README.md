@@ -15,9 +15,9 @@
 | Özellik | Açıklama |
 |---------|----------|
 | 🛫 **ADS-B Canlı Takip** | OpenSky Network üzerinden gerçek zamanlı uçak pozisyonları |
-| 🌦️ **Meteoroloji Entegrasyonu** | METAR, TAF raporları + üst seviye rüzgâr (FL300 jet stream) |
+| 🌦️ **Meteoroloji Entegrasyonu** | METAR, TAF raporları + NOAA GFS üst seviye rüzgâr (300 hPa ≈ FL300) |
 | 🤖 **A\* Rota Optimizasyonu** | NetworkX graf + A\* pathfinding ile rüzgâr-optimizasyonlu rota |
-| 🧠 **PyTorch Derin Öğrenme** | 4 katmanlı DNN ile yakıt/süre/CO₂ tahminleri (RTX 4070 CUDA) |
+| 🧠 **PyTorch Derin Öğrenme** | 4 gizli katmanlı DNN ile yakıt/süre/CO₂ tahminleri (RTX 4070 CUDA) |
 | ⛽ **OpenAP Yakıt Modeli** | Gerçek uçak performans verileriyle fizik tabanlı maliyet hesabı |
 | 🗺️ **İnteraktif Harita** | Leaflet dark theme harita + optimize vs standart rota karşılaştırma |
 | 📊 **Dashboard** | Tasarruf sayaçları, AI vs Fizik karşılaştırma, birikimli istatistikler |
@@ -111,8 +111,8 @@ Proje kökünde aşağıdaki dosyaları oluşturun:
 **`credentials.json`**
 ```json
 {
-  "opensky_client_id": "YOUR_OPENSKY_CLIENT_ID",
-  "opensky_client_secret": "YOUR_OPENSKY_CLIENT_SECRET"
+  "clientId": "YOUR_OPENSKY_CLIENT_ID",
+  "clientSecret": "YOUR_OPENSKY_CLIENT_SECRET"
 }
 ```
 
@@ -126,7 +126,7 @@ YOUR_OPENWEATHERMAP_API_KEY
 ```bash
 cd backend
 
-# Eğitim verisi üret (50.000 satır)
+# Eğitim verisi üret (200.000 satır)
 .\venv\Scripts\python ml\data_collector.py
 
 # Model eğit (GPU varsa ~1-2 dk)
@@ -166,7 +166,7 @@ Tarayıcıda `http://localhost:5173` adresine gidin.
 | `GET` | `/api/airports/{icao}` | Havalimanı detayı |
 | `GET` | `/api/airports/turkey/all` | Tüm Türkiye havalimanları |
 | `GET` | `/api/weather/{icao}` | METAR + TAF hava durumu |
-| `GET` | `/api/winds?lat=39&lon=35` | Üst seviye rüzgâr (FL300) |
+| `GET` | `/api/winds?lat=39&lon=35` | Üst seviye rüzgâr (300 hPa, Open-Meteo/GFS) |
 | `GET` | `/api/flights/live` | Canlı ADS-B uçuş verileri |
 | `GET` | `/api/traffic` | Türkiye hava sahası trafik özeti |
 | `POST` | `/api/optimize` | A* ile optimum rota hesapla |
@@ -180,20 +180,44 @@ Tarayıcıda `http://localhost:5173` adresine gidin.
 ### A* Pathfinding
 
 1. İki havalimanı arasında **great-circle** hattı çizilir
-2. Hat üzerinde **waypoint**'ler + her iki yana **±40 NM koridor** sapma noktaları eklenir
-3. **NetworkX** graf oluşturulur (41 düğüm, ~1640 kenar)
-4. Her kenar için **OpenAP** yakıt modeli + rüzgâr bileşenleri ile maliyet hesaplanır
-5. **Kompozit maliyet** fonksiyonu: `Yakıt %40 + Süre %35 + CO₂ %25`
-6. A* algoritması en düşük maliyetli yolu bulur
-7. Standart (direkt) rota ile karşılaştırılarak **tasarruf** hesaplanır
+2. Hat üzerinde **waypoint**'ler + rota ekseninin sağına/soluna **koridor** sapma noktaları eklenir
+   (koridor genişliği rotaya göre değişir: kısa rotada ±10–60 NM, transatlantikte ±200 NM)
+3. **NetworkX** graf oluşturulur (düğüm/kenar sayısı rotaya göre değişir — ör. LTFM→EGLL için ~560 düğüm / ~100 bin kenar)
+4. Her kenar için **OpenAP** yakıt modeli + gerçek rüzgâr bileşenleri ile maliyet hesaplanır
+   (cruise yakıt akışı sabit olduğu için bir kez hesaplanır — rota başına ~2 sn)
+5. **İki rota AYNI graf, AYNI rüzgâr ve AYNI fizik motoruyla** aranır; tek fark hedeftir:
+   - **Standart rota** → en kısa mesafe (`distance_nm`)
+   - **Optimize rota** → en düşük **kompozit maliyet**: `Yakıt %40 + Süre %35 + CO₂ %25`
+6. Kompozit maliyet, standart rotanın toplamlarına göre normalize edilir; böylece
+   standart rotanın maliyeti tam `1.0` olur ve ağırlık kaydırıcıları gerçekten etki eder
+7. Tasarruf = standart − optimize. Optimize rota **daha uzun ama daha az yakıtlı** olabilir;
+   bu durum `distance_delta_nm` ile açıkça raporlanır. Rüzgâr yoksa iki rota çakışır ve
+   `has_measurable_savings: false` döner — yapay tasarruf üretilmez.
 
 ### PyTorch DNN Modeli
 
-- **Mimari**: 7 → 256 → 128 → 64 → 32 → 3 nöron (BatchNorm + Dropout)
-- **Eğitim verisi**: 50.000 örnek (CostModel ile üretilmiş)
+- **Mimari**: 7 → 512 → 256 → 128 → 64 → 3 nöron (LeakyReLU + BatchNorm)
+- **Eğitim verisi**: 200.000 örnek (CostModel ile üretilmiş sentetik segment)
+- **Not**: Model, fizik motorunun çıktısını taklit eden bir *surrogate* modeldir;
+  fizik motorundan daha iyi olduğu iddia edilmez. `/api/predict` iki sonucu yan yana
+  ve aradaki sapmayı (`ai_vs_physics_error_percent`) döndürür.
 - **Özellikler**: mesafe, rüzgâr hızı/yönü, heading, irtifa, headwind, crosswind
 - **Çıktılar**: yakıt (kg), süre (dk), CO₂ (kg)
 - **Cihaz**: NVIDIA RTX 4070 (CUDA)
+
+---
+
+## 🧪 Testler
+
+```bash
+cd backend
+venv/Scripts/python.exe -m pytest tests/ -v
+```
+
+21 smoke testi ağ erişimi olmadan çalışır: havalimanı veritabanı (5.278 kayıt),
+graf kurulumu, OpenAP maliyet modeli, A*'ın iki rotayı da aynı rüzgârla hesapladığı,
+rüzgârsız durumda tasarruf üretmediği, API rota sırası ve ML tahmininin
+deterministik olduğu doğrulanır.
 
 ---
 
@@ -209,6 +233,7 @@ deneyap-takimlasma-proje/
 │   ├── main.py                   # FastAPI sunucu
 │   ├── config.py                 # API key yönetimi
 │   ├── requirements.txt
+│   ├── requirements-dev.txt      # pytest
 │   ├── services/
 │   │   ├── airport_service.py    # 5.278 havalimanı DB
 │   │   ├── adsb_service.py       # OpenSky canlı trafik
@@ -226,6 +251,8 @@ deneyap-takimlasma-proje/
 │   │   ├── flight_data.csv       # 50K eğitim verisi
 │   │   ├── model.pt              # Eğitilmiş model
 │   │   └── scaler.pkl            # Normalizasyon parametreleri
+│   ├── tests/
+│   │   └── test_smoke.py         # 21 smoke testi (ağ gerektirmez)
 │   └── utils/
 │       └── geo.py                # Haversine, great-circle
 │
@@ -258,7 +285,7 @@ deneyap-takimlasma-proje/
 | Harita | Leaflet, react-leaflet, CARTO dark tiles |
 | Optimizasyon | NetworkX, A* pathfinding, OpenAP |
 | Yapay Zekâ | PyTorch, CUDA, scikit-learn |
-| Veri Kaynakları | OpenSky Network, AviationWeather.gov, OpenWeatherMap, OurAirports |
+| Veri Kaynakları | OpenSky Network, AviationWeather.gov, Open-Meteo (GFS), OpenWeatherMap (yedek), OurAirports |
 | Animasyonlar | D3.js (globe), CSS animations, Lucide icons |
 
 ---

@@ -175,7 +175,7 @@ export default function RotatingEarth({ width = 800, height = 600, className = "
 
         render()
         setIsLoading(false)
-      } catch (_err) {
+      } catch {
         setError("Dünya harita verisi yüklenemedi")
         setIsLoading(false)
       }

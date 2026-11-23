@@ -32,6 +32,13 @@ openweatherapi.txt
 ml/models/*.pkl
 ml/data/*.csv
 
+# Eğitim verisi — ml/data_collector.py ile yeniden üretilebilir (~14 MB)
+backend/ml/flight_data.csv
+
+# Test / araç artefaktları
+.pytest_cache/
+*.tsbuildinfo
+
 # Cache
 backend/data/cache/
 

@@ -44,6 +44,11 @@ class CostModel:
         self.cruise_altitude_ft = 35000
         self.cruise_mass_kg = 65000   # Ortalama kütle
 
+        # Cruise yakıt akışı sabittir (kütle, TAS ve irtifa sabit varsayılıyor).
+        # Binlerce kenar için OpenAP'ı tekrar tekrar çağırmak yerine bir kez
+        # hesaplayıp saklıyoruz — rota optimizasyonunda ~50x hızlanma.
+        self._ff_kg_per_s: Optional[float] = None
+
     def calculate_segment_cost(
         self,
         distance_nm: float,
@@ -86,14 +91,17 @@ class CostModel:
         # CO₂ emisyonu
         co2_kg = fuel_to_co2(fuel_kg)
 
+        # NOT: Değerler YUVARLANMAZ. Yuvarlama, A*'ın maliyet fonksiyonuna
+        # yapay gürültü ekliyordu (rüzgârsız rotada bile "tasarruf" çıkmasına
+        # yol açıyordu). Yuvarlama yalnızca sunum katmanında yapılır.
         return {
-            "fuel_kg": round(fuel_kg, 1),
-            "time_min": round(time_min, 1),
-            "co2_kg": round(co2_kg, 1),
-            "ground_speed_kts": round(ground_speed, 1),
-            "headwind_kts": round(headwind, 1),
-            "crosswind_kts": round(crosswind, 1),
-            "distance_nm": round(distance_nm, 1),
+            "fuel_kg": fuel_kg,
+            "time_min": time_min,
+            "co2_kg": co2_kg,
+            "ground_speed_kts": ground_speed,
+            "headwind_kts": headwind,
+            "crosswind_kts": crosswind,
+            "distance_nm": distance_nm,
         }
 
     def composite_cost(
@@ -102,41 +110,72 @@ class CostModel:
         time_min: float,
         co2_kg: float,
         weights: Optional[dict] = None,
+        reference: Optional[dict] = None,
     ) -> float:
         """
-        Ağırlıklı kompozit maliyet hesaplama.
-        A* algoritmasında kenar ağırlığı olarak kullanılır.
-        """
-        w = weights or {"fuel": 0.4, "time": 0.35, "co2": 0.25}
+        Ağırlıklı kompozit maliyet — A*'ta kenar ağırlığı olarak kullanılır.
 
-        # Normalize edilmiş maliyetler
-        norm_fuel = fuel_kg / 100       # ~100 kg/segment referans
-        norm_time = time_min / 10       # ~10 dk/segment referans
-        norm_co2 = co2_kg / 300         # ~300 kg CO₂/segment referans
+        `reference`, referans rotanın (standart = en kısa rota) TOPLAM
+        maliyetleridir: {"fuel_kg", "time_min", "co2_kg"}.
+
+        Normalizasyon referansa göre yapıldığı için ağırlıklar gerçekten
+        karşılaştırılabilir: yakıt ağırlığı 0.40 ise, rota yakıtının
+        referansın %90'ı olması toplam maliyete 0.40 × 0.90 olarak yansır.
+        Böylece referans rotanın kompozit maliyeti tam olarak 1.0'dır ve
+        optimize rota her zaman ≤ 1.0 bulur.
+
+        Önceden sabit referanslar (100 kg / 10 dk / 300 kg CO₂) kullanılıyordu;
+        bu yüzden arayüzdeki 40/35/25 kaydırıcıları beklenen etkiyi
+        yaratmıyordu.
+        """
+        w = self._normalize_weights(weights)
+        ref = reference or {}
+
+        ref_fuel = ref.get("fuel_kg") or 1.0
+        ref_time = ref.get("time_min") or 1.0
+        ref_co2 = ref.get("co2_kg") or 1.0
 
         return (
-            w.get("fuel", 0.4) * norm_fuel +
-            w.get("time", 0.35) * norm_time +
-            w.get("co2", 0.25) * norm_co2
+            w["fuel"] * (fuel_kg / ref_fuel)
+            + w["time"] * (time_min / ref_time)
+            + w["co2"] * (co2_kg / ref_co2)
         )
 
-    def _openap_fuel(self, distance_nm: float, altitude_ft: float, time_hours: float) -> float:
-        """OpenAP ile yakıt hesabı."""
+    @staticmethod
+    def _normalize_weights(weights: Optional[dict]) -> dict:
+        """Ağırlıkları toplamı 1 olacak şekilde doğrula/normalize et."""
+        default = {"fuel": 0.4, "time": 0.35, "co2": 0.25}
+        w = {k: float((weights or {}).get(k, default[k])) for k in default}
+        total = sum(w.values())
+        if total <= 0:
+            return dict(default)
+        return {k: v / total for k, v in w.items()}
+
+    def _fuel_flow_kg_per_s(self, altitude_ft: float) -> Optional[float]:
+        """OpenAP cruise yakıt akışı (kg/s) — bir kez hesaplanıp cache'lenir."""
+        if self._ff_kg_per_s is not None:
+            return self._ff_kg_per_s
+
         try:
-            distance_m = distance_nm * 1852
             altitude_m = altitude_ft * 0.3048
             tas_ms = self.cruise_speed_kts * 0.5144
-
-            # Cruise fuel flow (kg/s)
             ff = self.fuelflow.enroute(
                 mass=self.cruise_mass_kg,
                 tas=tas_ms,
                 alt=altitude_m,
             )
-            fuel = ff * time_hours * 3600  # kg/s → kg
-            return max(fuel, 0)
+            self._ff_kg_per_s = float(ff)
+            return self._ff_kg_per_s
         except Exception:
+            return None
+
+    def _openap_fuel(self, distance_nm: float, altitude_ft: float, time_hours: float) -> float:
+        """OpenAP ile yakıt hesabı."""
+        ff = self._fuel_flow_kg_per_s(altitude_ft)
+        if ff is None:
             return self._simple_fuel(distance_nm, time_hours)
+        fuel = ff * time_hours * 3600  # kg/s → kg
+        return max(fuel, 0)
 
     def _simple_fuel(self, distance_nm: float, time_hours: float) -> float:
         """Basit yakıt modeli (OpenAP yoksa fallback)."""

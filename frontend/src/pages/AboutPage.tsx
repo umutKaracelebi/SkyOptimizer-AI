@@ -98,7 +98,7 @@ export default function AboutPage() {
 
   const stats = [
     { value: '915M', label: 'Ton CO₂/yıl', sub: 'Küresel havacılık emisyonu' },
-    { value: '%2-5', label: 'Tasarruf Potansiyeli', sub: 'Rüzgâr optimizasyonu ile' },
+    { value: '%1-4', label: 'Ölçülen Tasarruf', sub: 'Aynı rüzgârla karşılaştırma' },
     { value: '4.5B', label: 'Yolcu/yıl', sub: 'Küresel hava trafiği' },
     { value: '$180B', label: 'Yakıt Maliyeti/yıl', sub: 'Havayolu sektörü toplam' },
   ];
@@ -284,7 +284,7 @@ export default function AboutPage() {
             </div>
             <div className="flex justify-between text-gray-400 border-b border-gray-800 pb-2">
               <span>Veri Kaynakları</span>
-              <span className="text-white">OpenSky, NOAA, OWM, OurAirports</span>
+              <span className="text-white">OpenSky, Open-Meteo (NOAA GFS), OurAirports</span>
             </div>
             <div className="flex justify-between text-gray-400 border-b border-gray-800 pb-2">
               <span>Backend</span>
@@ -315,18 +315,18 @@ export default function AboutPage() {
             <div className="glass-card rounded-xl p-5">
               <h3 className="text-sm font-bold text-cyan-400 font-mono mb-3">🧠 Yapay Zekâ Modeli</h3>
               <ul className="text-xs text-gray-500 space-y-2">
-                <li>• Gradient Boosting Regressor — 178.000 parametre</li>
-                <li>• Eğitim verisi: OpenAP fizik modeli simülasyonları</li>
-                <li>• Özellikler: mesafe, rüzgâr hızı/yön, uçak tipi</li>
-                <li>• Fizik modeli ile %0.1-0.7 sapma</li>
-                <li>• 150+ NM mesafelerde yüksek doğruluk</li>
+                <li>• PyTorch DNN — 178.563 parametre (7→512→256→128→64→3)</li>
+                <li>• Eğitim verisi: 200.000 segment, OpenAP fizik modelinden üretildi</li>
+                <li>• Özellikler: mesafe, rüzgâr hızı/yön, heading, irtifa, headwind, crosswind</li>
+                <li>• Fizik modelini %0.1-0.5 sapmayla taklit eder (surrogate model)</li>
+                <li>• Model çıktısı fizik sonucuna göre "iyileştirilmez", sapma raporlanır</li>
               </ul>
             </div>
             <div className="glass-card rounded-xl p-5">
               <h3 className="text-sm font-bold text-cyan-400 font-mono mb-3">🗺️ Graf Motoru</h3>
               <ul className="text-xs text-gray-500 space-y-2">
                 <li>• Great-circle waypoint interpolasyonu</li>
-                <li>• ±40-100 NM koridor kaymaları (rüzgâr avantajı)</li>
+                <li>• ±10-200 NM koridor kaymaları (rota uzunluğuna göre)</li>
                 <li>• Dinamik havalimanı entegrasyonu (koridor bazlı)</li>
                 <li>• NetworkX DiGraph — kenar ağırlıklı A* arama</li>
                 <li>• Composite cost: yakıt × α + süre × β + CO₂ × γ</li>

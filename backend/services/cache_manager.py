@@ -86,7 +86,7 @@ class CacheManager:
         self.caches = {
             "opensky": TTLCache(maxsize=500, ttl=OPENSKY_CACHE_TTL),
             "weather": TTLCache(maxsize=200, ttl=WEATHER_CACHE_TTL),
-            "wind": TTLCache(maxsize=100, ttl=WIND_CACHE_TTL),
+            "wind": TTLCache(maxsize=600, ttl=WIND_CACHE_TTL),
             "airport": TTLCache(maxsize=1000, ttl=AIRPORT_CACHE_TTL),
         }
         self._hit_count = 0

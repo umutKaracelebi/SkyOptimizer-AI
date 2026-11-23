@@ -16,7 +16,7 @@ from services.airport_service import (
 )
 from services.adsb_service import get_live_flights, get_flight_track
 from services.weather_service import get_metar, get_taf, get_weather_at_point
-from services.wind_service import get_upper_winds, get_route_winds
+from services.wind_service import get_upper_winds, get_winds_batch
 
 app = FastAPI(
     title="SkyOptimizer AI",
@@ -90,14 +90,9 @@ async def api_turkey_airports():
 
 
 # ─── Weather Endpoints ──────────────────────────────────────────────
-@app.get("/api/weather/{icao}", tags=["Meteoroloji"])
-async def api_get_weather(icao: str):
-    """Belirtilen havalimanı için METAR ve TAF verisi."""
-    metar = await get_metar(icao)
-    taf = await get_taf(icao)
-    return {"icao": icao.upper(), "metar": metar, "taf": taf}
-
-
+# NOT: Sabit yollar ({parametre} içermeyen) ÖNCE tanımlanmalı. Aksi halde
+# /api/weather/point isteği /api/weather/{icao} tarafından yakalanıp
+# ICAO="POINT" olarak işlenir.
 @app.get("/api/weather/point", tags=["Meteoroloji"])
 async def api_get_point_weather(
     lat: float = Query(..., description="Enlem"),
@@ -105,6 +100,14 @@ async def api_get_point_weather(
 ):
     """Belirtilen koordinattaki hava durumu."""
     return await get_weather_at_point(lat, lon)
+
+
+@app.get("/api/weather/{icao}", tags=["Meteoroloji"])
+async def api_get_weather(icao: str):
+    """Belirtilen havalimanı için METAR ve TAF verisi."""
+    metar = await get_metar(icao)
+    taf = await get_taf(icao)
+    return {"icao": icao.upper(), "metar": metar, "taf": taf}
 
 
 @app.get("/api/winds", tags=["Meteoroloji"])
@@ -182,7 +185,7 @@ async def api_optimize_route(payload: dict):
     gc_points = great_circle_waypoints(
         origin["latitude"], origin["longitude"],
         dest["latitude"], dest["longitude"],
-        num_points=7,
+        num_points=6,  # 7 nokta (kalkış + varış dahil)
     )
 
     # Rota yönüne dik sapma hesapla
@@ -192,22 +195,31 @@ async def api_optimize_route(payload: dict):
     )
     perp_bearing_rad = math.radians((route_bearing + 90) % 360)
 
-    wind_data_map = {}
     # Koridor offset'leri (derece cinsinden): merkez + sağ/sol
     offsets_deg = [0, -0.8, 0.8]  # ~0.8° ≈ 48 NM
 
+    sample_points = []
     for gc_lat, gc_lon in gc_points:
         for offset in offsets_deg:
             sample_lat = gc_lat + offset * math.cos(perp_bearing_rad)
             sample_lon = gc_lon + offset * math.sin(perp_bearing_rad) / max(
                 math.cos(math.radians(gc_lat)), 0.01
             )
-            wind = await get_upper_winds(sample_lat, sample_lon, 300)
-            key = (round(sample_lat, 1), round(sample_lon, 1))
-            wind_data_map[key] = {
-                "speed": wind.get("wind_speed_kts", 0),
-                "dir": wind.get("wind_direction", 0),
-            }
+            sample_points.append((sample_lat, sample_lon))
+
+    # Tüm örnek noktaları TEK toplu istekle çek (Open-Meteo çoklu koordinat
+    # destekler). Önceden 21 ayrı HTTP çağrısı yapılıyordu.
+    sampled_winds = await get_winds_batch(sample_points, 300)
+
+    wind_data_map = {}
+    for (sample_lat, sample_lon), wind in zip(sample_points, sampled_winds):
+        if not wind:
+            continue
+        key = (round(sample_lat, 1), round(sample_lon, 1))
+        wind_data_map[key] = {
+            "speed": wind.get("wind_speed_kts", 0),
+            "dir": wind.get("wind_direction", 0),
+        }
 
     # A* optimizasyon
     result = await find_optimal_route(
@@ -225,16 +237,28 @@ async def api_optimize_route(payload: dict):
     origin_wx = await get_metar(origin_icao)
     dest_wx = await get_metar(dest_icao)
 
+    # Örnek noktaların ortalama rüzgârı. Yön için dairesel ortalama
+    # kullanılır: 350° ile 10°'nin ortalaması 180° değil 0°'dir.
+    speeds = [w["speed"] for w in wind_data_map.values()]
+    dirs = [w["dir"] for w in wind_data_map.values() if w.get("dir") is not None]
+    avg_speed = round(sum(speeds) / len(speeds), 1) if speeds else 0.0
+    if dirs:
+        sin_sum = sum(math.sin(math.radians(d)) for d in dirs)
+        cos_sum = sum(math.cos(math.radians(d)) for d in dirs)
+        avg_dir = round(math.degrees(math.atan2(sin_sum, cos_sum)) % 360, 0)
+    else:
+        avg_dir = 0.0
+
     return {
         "origin": origin,
         "destination": dest,
         "aircraft_type": aircraft_type,
         "wind_info": {
             "sample_points": len(wind_data_map),
-            "avg_speed_kts": round(
-                sum(w["speed"] for w in wind_data_map.values()) / max(len(wind_data_map), 1), 1
-            ),
-            "source": "multi_point_owm",
+            "avg_speed_kts": avg_speed,
+            "avg_direction_deg": avg_dir,
+            "source": "open-meteo-gfs",
+            "level_mb": 300,
         },
         "origin_weather": origin_wx,
         "destination_weather": dest_wx,
@@ -295,14 +319,17 @@ async def api_ml_predict(payload: dict):
         "source": "cost_model",
     }
 
-    # AI tahminini fizikle kalibre et
-    if ai_result is not None:
-        ai_result = predictor.calibrate_with_physics(ai_result, physics_result)
-
+    # AI tahmini ile fizik motoru arasındaki fark raporlanır. Model, fizik
+    # motorundan üretilmiş sentetik veriyle eğitildiği için (surrogate model)
+    # bu değer modelin fizik motorunu ne kadar iyi taklit ettiğini gösterir.
+    # AI sonucu, fizik sonucuna göre "iyileştirilmez" — olduğu gibi döner.
     return {
         "ai_prediction": ai_result,
         "physics_prediction": physics_result,
         "model_available": ai_result is not None,
+        "ai_vs_physics_error_percent": predictor.error_vs_physics(
+            ai_result, physics_result
+        ),
     }
 
 

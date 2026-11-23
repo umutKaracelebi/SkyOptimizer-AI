@@ -8,7 +8,7 @@ import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap } from 'react-
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { searchAirports, optimizeRoute, getLiveFlights } from '../services/api';
-import type { Airport, Flight } from '../services/api';
+import type { Airport, Flight, OptimizeResult, RouteInfo } from '../services/api';
 import StatsPanel from '../components/ui/StatsPanel';
 import type { SavingsData } from '../components/ui/StatsPanel';
 import ComparePanel from '../components/ui/ComparePanel';
@@ -74,17 +74,43 @@ function toPolyline(
   return result;
 }
 
+/* ── Great-circle başlangıç yönü ───────────────────────────────── */
+/**
+ * İki koordinat arasındaki başlangıç yönünü (bearing, derece) hesaplar.
+ * Backend'deki utils/geo.initial_bearing ile aynı formül — sadece
+ * boylam farkını kullanan kaba atan2 yaklaşımı yüksek enlemlerde
+ * belirgin hata verir.
+ */
+function initialBearing(
+  lat1: number, lon1: number, lat2: number, lon2: number,
+): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const toDeg = (r: number) => (r * 180) / Math.PI;
+  const φ1 = toRad(lat1);
+  const φ2 = toRad(lat2);
+  const Δλ = toRad(lon2 - lon1);
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x =
+    Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  return (toDeg(Math.atan2(y, x)) + 360) % 360;
+}
+
 /* ── Harita görünümünü güncelleyen yardımcı ─────────────────────── */
 function MapUpdater({ center, zoom, bounds }: {
   center: [number, number]; zoom: number;
   bounds?: [[number, number], [number, number]] | null;
 }) {
   const map = useMap();
-  if (bounds) {
-    map.fitBounds(bounds, { padding: [40, 40], maxZoom: 8 });
-  } else {
-    map.setView(center, zoom);
-  }
+
+  // Harita mutasyonu render sırasında değil, effect içinde yapılmalı.
+  useEffect(() => {
+    if (bounds) {
+      map.fitBounds(bounds, { padding: [40, 40], maxZoom: 8 });
+    } else {
+      map.setView(center, zoom);
+    }
+  }, [map, center, zoom, bounds]);
+
   return null;
 }
 
@@ -101,8 +127,7 @@ export default function OptimizerPage() {
   const [destResults, setDestResults] = useState<Airport[]>([]);
   const [selectedOrigin, setSelectedOrigin] = useState<Airport | null>(null);
   const [selectedDest, setSelectedDest] = useState<Airport | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<OptimizeResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [weights, setWeights] = useState({ fuel: 40, time: 35, co2: 25 });
@@ -129,13 +154,14 @@ export default function OptimizerPage() {
 
   /* ── havalimanı arama ──────────────────────────────────────── */
   const handleSearch = useCallback(async (query: string, type: 'origin' | 'dest') => {
+    const setResults = type === 'origin' ? setOriginResults : setDestResults;
     if (query.length < 2) {
-      type === 'origin' ? setOriginResults([]) : setDestResults([]);
+      setResults([]);
       return;
     }
     try {
       const data = await searchAirports(query, 20); // Limit 6'dan 20'ye çıkarıldı ki tüm sonuçlar listelenebilsin
-      type === 'origin' ? setOriginResults(data.results) : setDestResults(data.results);
+      setResults(data.results);
     } catch {
       /* ignore */
     }
@@ -216,14 +242,13 @@ export default function OptimizerPage() {
           co2: weights.co2 / 100,
         },
       });
-      if (data && 'error' in data) {
-        setError(String((data as Record<string, unknown>).error));
+      if (data && 'error' in data && data.error) {
+        setError(String(data.error));
       } else {
         setResult(data);
 
         // Harita görünümünü rota waypoint'lerine göre fitBounds ile ayarla
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const optWaypoints = (data as any)?.optimized_route?.waypoints;
+        const optWaypoints = data?.optimized_route?.waypoints;
         if (optWaypoints && optWaypoints.length > 0) {
           const unwrapped = toPolyline(optWaypoints);
           const lats = unwrapped.map((p: [number, number]) => p[0]);
@@ -241,8 +266,7 @@ export default function OptimizerPage() {
         }
 
         // Savings'i stats panel'e gönder
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const s = (data as any)?.savings;
+        const s = data?.savings;
         if (s) {
           setLatestSavings({
             fuel_saved_kg: s.fuel_saved_kg || 0,
@@ -253,20 +277,19 @@ export default function OptimizerPage() {
         }
 
         // Compare panel için veri hazırla
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const wind = (data as any)?.wind_info;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const stdRoute = (data as any)?.standard_route;
+        const wind = data?.wind_info;
+        const stdRoute = data?.standard_route;
         if (wind && stdRoute) {
-          const bearing = Math.atan2(
-            selectedDest.longitude - selectedOrigin.longitude,
-            selectedDest.latitude - selectedOrigin.latitude,
-          ) * (180 / Math.PI);
           setCompareData({
             distance_nm: stdRoute.total_distance_nm || 0,
-            wind_speed_kts: wind.speed_kts || 0,
-            wind_direction: wind.direction || 0,
-            heading: ((bearing % 360) + 360) % 360,
+            wind_speed_kts: wind.avg_speed_kts || 0,
+            wind_direction: wind.avg_direction_deg || 0,
+            heading: initialBearing(
+              selectedOrigin.latitude,
+              selectedOrigin.longitude,
+              selectedDest.latitude,
+              selectedDest.longitude,
+            ),
           });
         }
       }
@@ -277,8 +300,7 @@ export default function OptimizerPage() {
   };
 
   /* ── yardımcılar ───────────────────────────────────────────── */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const routeToPositions = (route: any): [number, number][] =>
+  const routeToPositions = (route: RouteInfo | undefined): [number, number][] =>
     route?.waypoints ? toPolyline(route.waypoints) : [];
 
   const stdRoute = result?.standard_route;
@@ -489,9 +511,36 @@ export default function OptimizerPage() {
                       <div className="w-3 h-0.5 bg-cyan-400 rounded" />
                       <span className="text-gray-400">Optimize: {optRoute.total_distance_nm} NM, {optRoute.estimated_fuel_kg} kg, {optRoute.estimated_time_min} dk</span>
                     </div>
-                    <div className="text-[10px] text-cyan-400 font-bold mt-1">
-                      ▲ %{savings.fuel_saved_percent} yakıt tasarrufu
-                    </div>
+                    {result && !result.has_measurable_savings ? (
+                      <div className="text-[10px] text-gray-400 mt-1 leading-relaxed">
+                        Bu rota için optimizasyon farkı yok — en kısa yol zaten
+                        maliyet-optimal.
+                      </div>
+                    ) : (
+                      <div
+                        className={`text-[10px] font-bold mt-1 ${
+                          savings.fuel_saved_kg >= 0 ? 'text-cyan-400' : 'text-red-400'
+                        }`}
+                      >
+                        {savings.fuel_saved_kg >= 0 ? '▲' : '▼'} %
+                        {Math.abs(savings.fuel_saved_percent)} yakıt
+                        {savings.fuel_saved_kg >= 0 ? ' tasarrufu' : ' artışı'}
+                        {savings.distance_delta_nm !== 0 && (
+                          <span className="text-gray-500 font-normal">
+                            {' '}(rota {Math.abs(savings.distance_delta_nm)} NM{' '}
+                            {savings.distance_delta_nm > 0 ? 'daha uzun' : 'daha kısa'})
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {result?.comparison_basis && (
+                      <div className="text-[9px] text-gray-600 leading-snug pt-1">
+                        İki rota da aynı rüzgârla hesaplandı. Optimize rota ağırlıkları:
+                        yakıt %{Math.round(result.comparison_basis.weights.fuel * 100)},
+                        süre %{Math.round(result.comparison_basis.weights.time * 100)},
+                        CO₂ %{Math.round(result.comparison_basis.weights.co2 * 100)}.
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

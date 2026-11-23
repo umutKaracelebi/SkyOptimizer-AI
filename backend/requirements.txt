@@ -5,8 +5,13 @@ networkx==3.4.2
 scikit-learn==1.6.1
 pandas==2.2.3
 numpy==2.1.3
-openap>=2.0
+openap==2.4
 geopy==2.4.1
 joblib==1.4.2
 python-dotenv==1.1.0
 cachetools==5.5.2
+
+# Derin öğrenme (ml_predictor.py ve ml/train_model.py için gerekli).
+# Bu satır CPU tekerleğini kurar. CUDA ile eğitim için README'deki
+# cu128 komutunu kullanın (model.pt cu128/torch 2.11 ile üretildi).
+torch>=2.6,<3.0

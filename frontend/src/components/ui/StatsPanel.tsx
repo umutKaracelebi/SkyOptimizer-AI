@@ -40,6 +40,8 @@ function AnimatedCounter({ value, decimals = 0, duration = 1200 }: { value: numb
 
   useEffect(() => {
     const start = prevRef.current;
+    // Hedefi hemen kaydet — animasyon yarıda kesilirse sayaç baştan başlamaz
+    prevRef.current = value;
     const diff = value - start;
     if (Math.abs(diff) < 0.01) { setDisplay(value); return; }
 
@@ -51,14 +53,21 @@ function AnimatedCounter({ value, decimals = 0, duration = 1200 }: { value: numb
       const progress = Math.min(elapsed / duration, 1);
       // ease-out cubic
       const eased = 1 - Math.pow(1 - progress, 3);
-      const current = start + diff * eased;
-      setDisplay(current);
+      setDisplay(start + diff * eased);
       if (progress < 1) { raf = requestAnimationFrame(tick); }
-      else { prevRef.current = value; }
     };
 
     raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+
+    // requestAnimationFrame her ortamda çalışmaz (arka plan sekmesi, bazı
+    // webview'ler). Bu durumda sayaç 0'da kalıp yanlış değer gösteriyordu —
+    // süre sonunda hedef değeri zorla yaz.
+    const fallback = setTimeout(() => setDisplay(value), duration + 250);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(fallback);
+    };
   }, [value, duration]);
 
   return <>{display.toFixed(decimals)}</>;

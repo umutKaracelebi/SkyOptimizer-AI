@@ -3,7 +3,8 @@
  * FastAPI backend ile iletişim kurar.
  */
 
-const API_BASE = "http://localhost:8000";
+const API_BASE =
+  (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://localhost:8000";
 
 // ─── Genel Fetch Helper ─────────────────────────────────────────────
 
@@ -192,17 +193,63 @@ export interface OptimizeRequest {
   };
 }
 
+export interface RouteWaypoint {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  type: string;
+}
+
+export interface RouteInfo {
+  type: "standard" | "optimized";
+  waypoints: RouteWaypoint[];
+  total_distance_nm: number;
+  estimated_fuel_kg: number;
+  estimated_time_min: number;
+  co2_emission_kg: number;
+  waypoint_count: number;
+}
+
+export interface SavingsData {
+  fuel_saved_kg: number;
+  fuel_saved_percent: number;
+  time_saved_min: number;
+  time_saved_percent: number;
+  co2_saved_kg: number;
+  cost_saved_usd: number;
+  /** Optimize rota standart rotadan kaç NM daha uzun/kısa (negatif = daha kısa) */
+  distance_delta_nm: number;
+}
+
+export interface WindInfo {
+  sample_points: number;
+  avg_speed_kts: number;
+  avg_direction_deg: number;
+  source: string;
+}
+
 export interface OptimizeResult {
   origin: Airport;
   destination: Airport;
-  direct_distance_nm: number;
-  estimated_time_min: number;
+  aircraft_type: string;
+  wind_info: WindInfo;
   origin_weather: Record<string, unknown>;
   destination_weather: Record<string, unknown>;
-  optimized_route: unknown;
-  standard_route: unknown;
-  savings: unknown;
-  message: string;
+  optimized_route: RouteInfo;
+  standard_route: RouteInfo;
+  savings: SavingsData;
+  /** İki rota birebir aynı düğüm dizisini izliyorsa true */
+  routes_identical: boolean;
+  /** Ölçülebilir tasarruf var mı (%0.1 eşiği) — yoksa "fark yok" gösterilir */
+  has_measurable_savings: boolean;
+  comparison_basis: {
+    description: string;
+    weights: { fuel: number; time: number; co2: number };
+    wind_samples: number;
+  };
+  graph_stats: { nodes: number; edges: number };
+  error?: string;
 }
 
 export async function optimizeRoute(
@@ -245,6 +292,12 @@ export interface PredictResult {
   ai_prediction: PredictionValues | null;
   physics_prediction: PredictionValues;
   model_available: boolean;
+  /** Modelin fizik motorundan ne kadar saptığı (%) — surrogate model kalitesi */
+  ai_vs_physics_error_percent: {
+    fuel_kg: number;
+    time_min: number;
+    co2_kg: number;
+  };
 }
 
 export async function mlPredict(

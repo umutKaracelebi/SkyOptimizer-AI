@@ -73,7 +73,7 @@ export default function ComparePanel({ routeData }: ComparePanelProps) {
     return (
       <div className="glass-card rounded-xl p-4">
         <h2 className="text-xs font-bold text-cyan-400 mb-3 flex items-center gap-2">
-          <Brain size={14} /> AI vs FİZİK KARŞILAŞTIRMA
+          <Brain size={14} /> AI vs FİZİK MOTORU
         </h2>
         <div className="flex items-center justify-center py-4 text-gray-500 text-xs gap-2">
           <Loader2 size={14} className="animate-spin" /> Tahmin hesaplanıyor...
@@ -86,7 +86,7 @@ export default function ComparePanel({ routeData }: ComparePanelProps) {
     return (
       <div className="glass-card rounded-xl p-4">
         <h2 className="text-xs font-bold text-cyan-400 mb-3 flex items-center gap-2">
-          <Brain size={14} /> AI vs FİZİK KARŞILAŞTIRMA
+          <Brain size={14} /> AI vs FİZİK MOTORU
         </h2>
         <p className="text-red-400/70 text-[10px]">Backend'e bağlanılamadı</p>
       </div>
@@ -107,14 +107,14 @@ export default function ComparePanel({ routeData }: ComparePanelProps) {
   return (
     <div className="glass-card rounded-xl p-4">
       <h2 className="text-xs font-bold text-cyan-400 mb-3 flex items-center gap-2">
-        <Brain size={14} /> AI vs FİZİK KARŞILAŞTIRMA
+        <Brain size={14} /> AI vs FİZİK MOTORU
       </h2>
 
       {/* Model durumu badge */}
       <div className="mb-3">
         {result.model_available ? (
           <span className="inline-flex items-center gap-1.5 text-[10px] px-2 py-1 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-            <Brain size={10} /> AI Model Aktif
+            <Brain size={10} /> AI Model Aktif (surrogate)
           </span>
         ) : (
           <span className="inline-flex items-center gap-1.5 text-[10px] px-2 py-1 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30">
@@ -177,6 +177,13 @@ export default function ComparePanel({ routeData }: ComparePanelProps) {
           </div>
         )}
       </div>
+
+      {/* Dürüstlük notu — model fiziğin yerine geçmez, onu taklit eder */}
+      <p className="mt-3 pt-2 border-t border-gray-800 text-[9px] leading-relaxed text-gray-500">
+        AI modeli, fizik motorunun ürettiği veriyle eğitilmiştir. Buradaki fark,
+        modelin fizik motorunu ne kadar iyi taklit ettiğini gösterir — AI'ın
+        fizikten daha verimli olduğu anlamına gelmez.
+      </p>
     </div>
   );
 }

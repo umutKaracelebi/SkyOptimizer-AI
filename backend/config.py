@@ -12,15 +12,33 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 
 # ─── OpenSky Network Credentials ────────────────────────────────────
+# Hem README'deki (opensky_client_id) hem OpenSky panelinden kopyalanan
+# (clientId) anahtar adları desteklenir.
 _credentials_path = PROJECT_ROOT / "credentials.json"
 if _credentials_path.exists():
     with open(_credentials_path, "r") as f:
         _creds = json.load(f)
-    OPENSKY_CLIENT_ID = _creds.get("clientId", "")
-    OPENSKY_CLIENT_SECRET = _creds.get("clientSecret", "")
+    OPENSKY_CLIENT_ID = (
+        _creds.get("clientId")
+        or _creds.get("opensky_client_id")
+        or _creds.get("client_id")
+        or ""
+    )
+    OPENSKY_CLIENT_SECRET = (
+        _creds.get("clientSecret")
+        or _creds.get("opensky_client_secret")
+        or _creds.get("client_secret")
+        or ""
+    )
 else:
     OPENSKY_CLIENT_ID = os.getenv("OPENSKY_CLIENT_ID", "")
     OPENSKY_CLIENT_SECRET = os.getenv("OPENSKY_CLIENT_SECRET", "")
+
+if not OPENSKY_CLIENT_ID:
+    print(
+        "[UYARI] OpenSky kimlik bilgisi bulunamadı — canlı ADS-B trafiği "
+        "devre dışı. credentials.json içine clientId/clientSecret ekleyin."
+    )
 
 # ─── OpenWeatherMap API Key ─────────────────────────────────────────
 _owm_path = PROJECT_ROOT / "openweatherapi.txt"

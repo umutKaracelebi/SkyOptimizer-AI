@@ -144,28 +144,28 @@ class MLPredictor:
             "source": "ai_model",
         }
 
-    def calibrate_with_physics(self, ai_result: dict, physics_result: dict) -> dict:
+    @staticmethod
+    def error_vs_physics(ai_result: dict, physics_result: dict) -> dict:
         """
-        AI tahminini fizik motoruyla kalibre et.
-        AI daha verimli rota/konfigürasyon bulmuş gibi, fizikten
-        %2-4 daha düşük sonuç döndürür.
-        """
-        if ai_result is None:
-            return None
+        AI tahmini ile fizik motoru arasındaki farkı yüzde olarak raporla.
 
-        calibrated = {}
+        Model, CostModel çıktısıyla üretilmiş sentetik veriyle eğitildiği için
+        (surrogate model) fark küçük olmalıdır. Buradaki değer modelin
+        fizik motorunu ne kadar iyi taklit ettiğini gösterir — modelin
+        fizikten daha iyi olduğunu DEĞİL.
+        """
+        if not ai_result:
+            return {}
+
+        error = {}
         for key in ["fuel_kg", "time_min", "co2_kg"]:
             phys_val = physics_result.get(key, 0)
-            if phys_val > 0:
-                # AI fiziğe göre %2-3 daha verimli
-                import random
-                factor = 0.97 - (random.random() * 0.01)  # 0.96-0.97
-                calibrated[key] = round(phys_val * factor, 1)
+            ai_val = ai_result.get(key, 0)
+            if phys_val:
+                error[key] = round((ai_val - phys_val) / phys_val * 100, 2)
             else:
-                calibrated[key] = ai_result.get(key, 0)
-
-        calibrated["source"] = "ai_model"
-        return calibrated
+                error[key] = 0.0
+        return error
 
 
 # ─── Global erişim ───────────────────────────────────────────────
